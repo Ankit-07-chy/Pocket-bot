@@ -6,3 +6,14 @@ database/*.db
 
 # Firebase service account key (NEVER commit this)
 server/firebase/serviceAccountKey.json
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+
+
+# venv
+.venv
+
+# env keys 
+.env
