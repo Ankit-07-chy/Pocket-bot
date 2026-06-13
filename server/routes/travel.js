@@ -1,0 +1,249 @@
+// ============================================================
+// FEATURE 3: TRAVEL OPTIONS
+// Track trips, find patterns, suggest cheaper alternatives
+// ============================================================
+const express = require('express');
+const router = express.Router();
+
+// Reference data: typical costs per transport mode
+const TRANSPORT_COSTS = {
+    uber: { avg_per_km: 2.50, base: 5.00 },
+    taxi: { avg_per_km: 2.00, base: 4.00 },
+    bus: { avg_per_trip: 2.50, monthly_pass: 40 },
+    subway: { avg_per_trip: 2.75, monthly_pass: 45 },
+    bike: { avg_per_trip: 0, monthly_rental: 15 },
+    walk: { avg_per_trip: 0 },
+    carpool: { avg_per_trip: 3.00 },
+    drive: { avg_per_km: 0.50, parking: 5.00 }
+};
+
+module.exports = function (db, authenticateToken) {
+
+    // POST /api/travel/log - Log a trip
+    router.post('/log', authenticateToken, (req, res) => {
+        try {
+            const { origin, destination, mode, cost, duration_minutes, date } = req.body;
+
+            if (!origin || !destination || !mode) {
+                return res.status(400).json({ error: 'Origin, destination, and mode are required.' });
+            }
+
+            const validModes = Object.keys(TRANSPORT_COSTS);
+            if (!validModes.includes(mode.toLowerCase())) {
+                return res.status(400).json({
+                    error: `Invalid mode. Use: ${validModes.join(', ')}`
+                });
+            }
+
+            const tripDate = date || new Date().toISOString().split('T')[0];
+
+            const result = db.prepare(`
+        INSERT INTO travel_logs (user_id, date, origin, destination, mode, cost, duration_minutes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(req.user.id, tripDate, origin, destination, mode.toLowerCase(), cost || 0, duration_minutes || 0);
+
+            res.status(201).json({
+                message: 'Trip logged!',
+                trip: { id: result.lastInsertRowid, origin, destination, mode, cost, date: tripDate }
+            });
+        } catch (err) {
+            console.error('Log travel error:', err);
+            res.status(500).json({ error: 'Failed to log trip.' });
+        }
+    });
+
+    // GET /api/travel/options - Get alternative transport options for common routes
+    router.get('/options', authenticateToken, (req, res) => {
+        try {
+            // Find user's most common routes
+            const commonRoutes = db.prepare(`
+        SELECT origin, destination, mode, AVG(cost) as avg_cost, COUNT(*) as trip_count,
+               AVG(duration_minutes) as avg_duration
+        FROM travel_logs
+        WHERE user_id = ? AND date >= date('now', '-30 days')
+        GROUP BY origin, destination
+        ORDER BY trip_count DESC
+        LIMIT 5
+      `).all(req.user.id);
+
+            // For each common route, suggest alternatives
+            const routeOptions = commonRoutes.map(route => {
+                const alternatives = [];
+
+                // Compare with other modes
+                for (const [mode, costs] of Object.entries(TRANSPORT_COSTS)) {
+                    if (mode === route.mode) continue;
+
+                    let estimatedCost = 0;
+                    if (costs.avg_per_trip !== undefined) {
+                        estimatedCost = costs.avg_per_trip;
+                    } else if (costs.avg_per_km) {
+                        // Rough estimate: assume 5km average trip
+                        estimatedCost = costs.avg_per_km * 5 + (costs.base || 0);
+                    }
+
+                    const savings = route.avg_cost - estimatedCost;
+                    if (savings > 0) {
+                        alternatives.push({
+                            mode,
+                            estimated_cost: Math.round(estimatedCost * 100) / 100,
+                            savings_per_trip: Math.round(savings * 100) / 100,
+                            monthly_savings: Math.round(savings * route.trip_count * 100) / 100
+                        });
+                    }
+                }
+
+                // Sort alternatives by savings
+                alternatives.sort((a, b) => b.savings_per_trip - a.savings_per_trip);
+
+                return {
+                    route: `${route.origin} → ${route.destination}`,
+                    current_mode: route.mode,
+                    current_avg_cost: Math.round(route.avg_cost * 100) / 100,
+                    trips_per_month: route.trip_count,
+                    alternatives: alternatives.slice(0, 3) // Top 3 alternatives
+                };
+            });
+
+            res.json({
+                common_routes: routeOptions,
+                tip: routeOptions.length > 0
+                    ? `Your most frequent trip is ${routeOptions[0].route}. Consider switching to save money!`
+                    : 'Log more trips to get personalized transport recommendations.'
+            });
+        } catch (err) {
+            console.error('Travel options error:', err);
+            res.status(500).json({ error: 'Failed to get travel options.' });
+        }
+    });
+
+    // GET /api/travel/savings - Show total savings potential
+    router.get('/savings', authenticateToken, (req, res) => {
+        try {
+            // Total travel spending last 30 days
+            const totalSpend = db.prepare(`
+        SELECT COALESCE(SUM(cost), 0) as total, COUNT(*) as trips
+        FROM travel_logs
+        WHERE user_id = ? AND date >= date('now', '-30 days')
+      `).get(req.user.id);
+
+            // Spending by mode
+            const byMode = db.prepare(`
+        SELECT mode, SUM(cost) as total, COUNT(*) as trips, AVG(cost) as avg_cost
+        FROM travel_logs
+        WHERE user_id = ? AND date >= date('now', '-30 days')
+        GROUP BY mode
+        ORDER BY total DESC
+      `).all(req.user.id);
+
+            // Calculate potential savings if switching expensive modes to cheaper ones
+            let potentialSavings = 0;
+            const suggestions = [];
+
+            for (const modeData of byMode) {
+                if (['uber', 'taxi', 'drive'].includes(modeData.mode)) {
+                    // These could be replaced with bus/bike
+                    const busCost = TRANSPORT_COSTS.bus.avg_per_trip * modeData.trips;
+                    const savings = modeData.total - busCost;
+                    if (savings > 0) {
+                        potentialSavings += savings;
+                        suggestions.push({
+                            current: modeData.mode,
+                            suggested: 'bus',
+                            current_monthly_cost: Math.round(modeData.total * 100) / 100,
+                            suggested_monthly_cost: Math.round(busCost * 100) / 100,
+                            monthly_savings: Math.round(savings * 100) / 100
+                        });
+                    }
+                }
+            }
+
+            // Check if a monthly pass makes sense
+            const busTrips = byMode.find(m => m.mode === 'bus');
+            let passRecommendation = null;
+            if (busTrips && busTrips.trips >= 16) {
+                // 16+ bus trips/month = monthly pass is worth it
+                const passCost = TRANSPORT_COSTS.bus.monthly_pass;
+                const withoutPass = busTrips.total;
+                if (withoutPass > passCost) {
+                    passRecommendation = {
+                        message: `You take ${busTrips.trips} bus trips/month. A monthly pass ($${passCost}) would save you $${(withoutPass - passCost).toFixed(2)}!`,
+                        savings: Math.round((withoutPass - passCost) * 100) / 100
+                    };
+                }
+            }
+
+            res.json({
+                monthly_travel_spend: Math.round(totalSpend.total * 100) / 100,
+                total_trips: totalSpend.trips,
+                by_mode: byMode,
+                potential_monthly_savings: Math.round(potentialSavings * 100) / 100,
+                suggestions,
+                pass_recommendation: passRecommendation
+            });
+        } catch (err) {
+            console.error('Travel savings error:', err);
+            res.status(500).json({ error: 'Failed to calculate savings.' });
+        }
+    });
+
+    // GET /api/travel/patterns - Identify regular travel patterns
+    router.get('/patterns', authenticateToken, (req, res) => {
+        try {
+            // Most visited destinations
+            const topDestinations = db.prepare(`
+        SELECT destination, COUNT(*) as visits, AVG(cost) as avg_cost
+        FROM travel_logs
+        WHERE user_id = ? AND date >= date('now', '-30 days')
+        GROUP BY destination
+        ORDER BY visits DESC
+        LIMIT 5
+      `).all(req.user.id);
+
+            // Travel by day of week
+            const byDayOfWeek = db.prepare(`
+        SELECT
+          CASE strftime('%w', date)
+            WHEN '0' THEN 'Sunday'
+            WHEN '1' THEN 'Monday'
+            WHEN '2' THEN 'Tuesday'
+            WHEN '3' THEN 'Wednesday'
+            WHEN '4' THEN 'Thursday'
+            WHEN '5' THEN 'Friday'
+            WHEN '6' THEN 'Saturday'
+          END as day_name,
+          COUNT(*) as trips,
+          SUM(cost) as total_cost
+        FROM travel_logs
+        WHERE user_id = ? AND date >= date('now', '-30 days')
+        GROUP BY strftime('%w', date)
+        ORDER BY strftime('%w', date)
+      `).all(req.user.id);
+
+            // Regular routes (same origin-destination, 3+ times)
+            const regularRoutes = db.prepare(`
+        SELECT origin, destination, mode, COUNT(*) as frequency,
+               AVG(cost) as avg_cost, SUM(cost) as total_cost
+        FROM travel_logs
+        WHERE user_id = ? AND date >= date('now', '-30 days')
+        GROUP BY origin, destination
+        HAVING COUNT(*) >= 2
+        ORDER BY frequency DESC
+      `).all(req.user.id);
+
+            res.json({
+                top_destinations: topDestinations,
+                by_day_of_week: byDayOfWeek,
+                regular_routes: regularRoutes,
+                insight: regularRoutes.length > 0
+                    ? `You have ${regularRoutes.length} regular route(s). The most frequent is ${regularRoutes[0].origin} → ${regularRoutes[0].destination} (${regularRoutes[0].frequency}x/month).`
+                    : 'Keep logging trips to discover your travel patterns!'
+            });
+        } catch (err) {
+            console.error('Travel patterns error:', err);
+            res.status(500).json({ error: 'Failed to analyze patterns.' });
+        }
+    });
+
+    return router;
+};

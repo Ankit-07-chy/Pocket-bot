@@ -1,0 +1,426 @@
+// ============================================================
+// FEATURE 6: PERSONALIZED SUPPORT
+// AI chat, cross-feature insights, personalized advice
+// Uses simple rule-based system (no complex ML needed)
+// ============================================================
+const express = require('express');
+const router = express.Router();
+
+module.exports = function (db, authenticateToken) {
+
+    // POST /api/chat - Send message to AI support
+    router.post('/chat', authenticateToken, (req, res) => {
+        try {
+            const { message } = req.body;
+
+            if (!message || message.trim().length === 0) {
+                return res.status(400).json({ error: 'Message is required.' });
+            }
+
+            // Gather all user context for personalized response
+            const context = gatherUserContext(db, req.user.id);
+
+            // Generate AI response based on rules + context
+            const aiResponse = generateResponse(message, context);
+
+            // Save to chat history
+            const date = new Date().toISOString().split('T')[0];
+            db.prepare(`
+        INSERT INTO chat_history (user_id, date, user_message, ai_response, context)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(req.user.id, date, message, aiResponse, JSON.stringify(context.summary));
+
+            res.json({
+                response: aiResponse,
+                suggestions: getSuggestions(context)
+            });
+        } catch (err) {
+            console.error('Chat error:', err);
+            res.status(500).json({ error: 'Failed to process message.' });
+        }
+    });
+
+    // GET /api/support/suggestions - Get personalized tips based on all data
+    router.get('/suggestions', authenticateToken, (req, res) => {
+        try {
+            const context = gatherUserContext(db, req.user.id);
+            const suggestions = generatePersonalizedSuggestions(context);
+
+            // Store as recommendations
+            const date = new Date().toISOString().split('T')[0];
+            suggestions.forEach(s => {
+                db.prepare(`
+          INSERT INTO recommendations (user_id, date, type, text)
+          VALUES (?, ?, ?, ?)
+        `).run(req.user.id, date, s.type, s.text);
+            });
+
+            res.json({
+                suggestions,
+                context_summary: context.summary
+            });
+        } catch (err) {
+            console.error('Suggestions error:', err);
+            res.status(500).json({ error: 'Failed to get suggestions.' });
+        }
+    });
+
+    // GET /api/support/emergency - Crisis resources
+    router.get('/emergency', authenticateToken, (req, res) => {
+        res.json({
+            message: 'If you\'re in crisis, please reach out for help immediately.',
+            resources: [
+                { name: '988 Suicide & Crisis Lifeline', phone: '988', description: 'Call or text 24/7' },
+                { name: 'Crisis Text Line', phone: 'Text HOME to 741741', description: 'Free 24/7 text support' },
+                { name: 'Campus Counseling Center', phone: 'Check your university website', description: 'Free for enrolled students' },
+                { name: 'NAMI Helpline', phone: '1-800-950-6264', description: 'Mental health information and referrals' }
+            ],
+            reminder: 'You are not alone. Asking for help is a sign of strength, not weakness.'
+        });
+    });
+
+    // POST /api/support/feedback - Rate helpfulness of advice
+    router.post('/feedback', authenticateToken, (req, res) => {
+        try {
+            const { recommendation_id, was_helpful, feedback } = req.body;
+
+            if (recommendation_id === undefined || was_helpful === undefined) {
+                return res.status(400).json({ error: 'recommendation_id and was_helpful are required.' });
+            }
+
+            db.prepare(`
+        UPDATE recommendations
+        SET was_helpful = ?, feedback = ?
+        WHERE id = ? AND user_id = ?
+      `).run(was_helpful ? 1 : 0, feedback || '', recommendation_id, req.user.id);
+
+            res.json({ message: 'Thanks for the feedback! This helps us give better advice.' });
+        } catch (err) {
+            console.error('Feedback error:', err);
+            res.status(500).json({ error: 'Failed to save feedback.' });
+        }
+    });
+
+    // GET /api/chat/history - Get chat history
+    router.get('/chat/history', authenticateToken, (req, res) => {
+        try {
+            const { limit } = req.query;
+            const messages = db.prepare(`
+        SELECT id, date, user_message, ai_response, created_at
+        FROM chat_history
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      `).all(req.user.id, parseInt(limit) || 20);
+
+            res.json(messages.reverse()); // Return in chronological order
+        } catch (err) {
+            console.error('Chat history error:', err);
+            res.status(500).json({ error: 'Failed to get chat history.' });
+        }
+    });
+
+    return router;
+};
+
+// ============================================================
+// HELPER: Gather all context about a user
+// ============================================================
+function gatherUserContext(db, userId) {
+    // User profile
+    const user = db.prepare('SELECT name, major, year, monthly_income, daily_budget FROM users WHERE id = ?').get(userId);
+
+    // Recent burnout score
+    const burnout = db.prepare('SELECT score, alert_level FROM burnout_scores WHERE user_id = ? ORDER BY date DESC LIMIT 1').get(userId);
+
+    // Recent health
+    const health = db.prepare('SELECT * FROM health_logs WHERE user_id = ? ORDER BY date DESC LIMIT 7').all(userId);
+
+    // Expense patterns (last 7 days)
+    const expenses = db.prepare(`
+    SELECT category, SUM(amount) as total
+    FROM expenses WHERE user_id = ? AND date >= date('now', '-7 days')
+    GROUP BY category
+  `).all(userId);
+
+    // Food spending
+    const foodSpend = db.prepare(`
+    SELECT COALESCE(AVG(daily_total), 0) as avg_daily
+    FROM (
+      SELECT SUM(cost) as daily_total FROM food_logs
+      WHERE user_id = ? AND date >= date('now', '-7 days')
+      GROUP BY date
+    )
+  `).get(userId);
+
+    // Past recommendations that worked
+    const whatWorked = db.prepare(`
+    SELECT type, text FROM recommendations
+    WHERE user_id = ? AND was_helpful = 1
+    ORDER BY date DESC LIMIT 5
+  `).all(userId);
+
+    // Exercise stats
+    const exerciseStats = health.length > 0
+        ? { avg: health.reduce((s, h) => s + h.exercise_minutes, 0) / health.length, days_zero: health.filter(h => h.exercise_minutes === 0).length }
+        : { avg: 0, days_zero: 7 };
+
+    // Sleep stats
+    const sleepStats = health.length > 0
+        ? { avg: health.reduce((s, h) => s + h.sleep_hours, 0) / health.length }
+        : { avg: 0 };
+
+    // Stress stats
+    const stressStats = health.length > 0
+        ? { avg: health.reduce((s, h) => s + h.stress_level, 0) / health.length }
+        : { avg: 5 };
+
+    return {
+        user,
+        burnout: burnout || { score: 0, alert_level: 'unknown' },
+        health: health[0] || null,
+        expenses,
+        foodSpend: foodSpend.avg_daily,
+        whatWorked,
+        exercise: exerciseStats,
+        sleep: sleepStats,
+        stress: stressStats,
+        summary: {
+            burnout_score: burnout ? burnout.score : null,
+            avg_sleep: sleepStats.avg,
+            avg_stress: stressStats.avg,
+            avg_exercise: exerciseStats.avg,
+            daily_food_spend: foodSpend.avg_daily
+        }
+    };
+}
+
+// ============================================================
+// RULE-BASED AI RESPONSE GENERATOR
+// No complex ML - just smart rules based on user data
+// ============================================================
+function generateResponse(message, context) {
+    const msg = message.toLowerCase();
+    const { burnout, sleep, stress, exercise, foodSpend, whatWorked, user } = context;
+
+    // ---- Topic Detection ----
+
+    // Stress / burnout related
+    if (msg.includes('stress') || msg.includes('burnout') || msg.includes('overwhelm') || msg.includes('anxious')) {
+        if (burnout.score >= 7) {
+            return `I can see you're really struggling right now - your burnout score is ${burnout.score}/10. ` +
+                `This is serious, and I want you to know it's okay to take a step back. ` +
+                `Your sleep has been around ${sleep.avg.toFixed(1)} hours, which isn't enough for recovery. ` +
+                `Here's what I'd suggest: 1) Take a 10-minute walk right now, 2) Set a hard stop time for studying tonight, ` +
+                `3) Talk to someone you trust. You don't have to handle this alone.`;
+        }
+        if (burnout.score >= 4) {
+            return `Your stress levels are elevated (avg ${stress.avg.toFixed(1)}/10). ` +
+                `I notice you've been sleeping ${sleep.avg.toFixed(1)} hours - try adding 30 minutes tonight. ` +
+                `A quick win: take a 5-minute break every 45 minutes of studying. Your brain needs recovery time to learn effectively.`;
+        }
+        return `Your current stress level is manageable (${stress.avg.toFixed(1)}/10). ` +
+            `Keep your current habits going! If you feel it rising, remember: short breaks, movement, and sleep are your best tools.`;
+    }
+
+    // Sleep related
+    if (msg.includes('sleep') || msg.includes('tired') || msg.includes('insomnia') || msg.includes('exhausted')) {
+        const sleepAdvice = sleep.avg < 6
+            ? `You're only averaging ${sleep.avg.toFixed(1)} hours of sleep - that's concerning. Your brain needs 7-8 hours to function well. `
+            : `You're getting ${sleep.avg.toFixed(1)} hours - not bad! `;
+
+        return sleepAdvice +
+            `Tips that work for students: 1) Set a phone alarm at 10 PM to start winding down, ` +
+            `2) No caffeine after 2 PM, 3) Keep your room cool and dark. ` +
+            `Even 30 extra minutes of sleep improves memory and focus significantly.`;
+    }
+
+    // Money / budget related
+    if (msg.includes('money') || msg.includes('budget') || msg.includes('spend') || msg.includes('expensive') || msg.includes('broke')) {
+        const totalExpenses = context.expenses.reduce((s, e) => s + e.total, 0);
+        const dailySpend = totalExpenses / 7;
+
+        let response = `Looking at your spending: you've spent $${totalExpenses.toFixed(2)} in the last 7 days ($${dailySpend.toFixed(2)}/day). `;
+
+        if (user.daily_budget > 0 && dailySpend > user.daily_budget) {
+            response += `That's above your $${user.daily_budget}/day budget. `;
+        }
+
+        if (foodSpend > 10) {
+            response += `Your food spending ($${foodSpend.toFixed(2)}/day) is the biggest opportunity to save. Try cooking at home - rice, beans, and eggs make a great $3 meal. `;
+        }
+
+        response += `Want me to suggest specific budget meals or help you find where to cut back?`;
+        return response;
+    }
+
+    // Food related
+    if (msg.includes('food') || msg.includes('eat') || msg.includes('hungry') || msg.includes('meal') || msg.includes('cook')) {
+        if (foodSpend > 10) {
+            return `You're spending about $${foodSpend.toFixed(2)}/day on food. The student sweet spot is $6-8/day. ` +
+                `Here are some quick wins: breakfast (oatmeal + banana = $1.50), lunch (rice + beans = $2.50), ` +
+                `dinner (pasta + sauce = $2.00). That's a full day for $6! Check the Food Recommendations section for more ideas.`;
+        }
+        return `You're doing well with food spending ($${foodSpend.toFixed(2)}/day)! ` +
+            `Make sure you're getting enough nutrition though. A balanced meal doesn't have to be expensive - ` +
+            `rice, vegetables, and protein (eggs, beans, tofu) cover your basics.`;
+    }
+
+    // Exercise related
+    if (msg.includes('exercise') || msg.includes('workout') || msg.includes('gym') || msg.includes('walk') || msg.includes('active')) {
+        if (exercise.avg < 10) {
+            const pastExerciseHelped = whatWorked.some(w => w.type === 'exercise' || w.text.includes('walk') || w.text.includes('exercise'));
+            let response = `I see you're not exercising much (avg ${exercise.avg.toFixed(0)} min/day). `;
+
+            if (pastExerciseHelped) {
+                response += `Remember, you told me before that exercise helped you feel better! `;
+            }
+            response += `Start super small: a 5-minute walk between classes. That's it. No gym needed. ` +
+                `Even this tiny amount has been shown to reduce stress and improve focus.`;
+            return response;
+        }
+        return `Nice! You're averaging ${exercise.avg.toFixed(0)} minutes of activity per day. ` +
+            `Keep it up! Variety helps - try alternating between walking, stretching, and whatever you enjoy.`;
+    }
+
+    // Motivation / feeling down
+    if (msg.includes('motivat') || msg.includes('give up') || msg.includes('can\'t') || msg.includes('hopeless') || msg.includes('fail')) {
+        return `I hear you, and what you're feeling is valid. Being a student is genuinely hard. ` +
+            `Here's what I know about YOU: you've been showing up and tracking your health - that takes commitment. ` +
+            `Focus on just ONE small thing today. Not everything, just one thing. ` +
+            `And remember: struggling doesn't mean failing. It means you're pushing through something difficult.`;
+    }
+
+    // Study related
+    if (msg.includes('study') || msg.includes('exam') || msg.includes('assignment') || msg.includes('homework') || msg.includes('deadline')) {
+        const latestHealth = context.health;
+        let response = '';
+
+        if (latestHealth && latestHealth.study_hours > 6) {
+            response = `You've been studying ${latestHealth.study_hours} hours today - that's a lot! `;
+        }
+
+        response += `For effective studying: 1) Pomodoro technique (25 min on, 5 min off), ` +
+            `2) Take a real break every 2 hours (walk, stretch, snack), ` +
+            `3) Sleep > all-nighters (your brain consolidates memory during sleep). `;
+
+        if (stress.avg >= 7) {
+            response += `Your stress is high - make sure you're not just studying MORE but studying SMARTER.`;
+        }
+
+        return response;
+    }
+
+    // General greeting or unclear intent
+    if (msg.includes('hello') || msg.includes('hi') || msg.includes('hey') || msg.length < 10) {
+        return `Hey ${user.name}! How's your day going? ` +
+            `I can help with budgeting, food ideas, stress management, study tips, or just chat. What's on your mind?`;
+    }
+
+    // Default: provide general personalized insight
+    let defaultResponse = `Thanks for sharing, ${user.name}. Based on what I know about you: `;
+
+    if (burnout.score >= 4) {
+        defaultResponse += `your stress levels are elevated, so prioritize rest. `;
+    }
+    if (sleep.avg < 7) {
+        defaultResponse += `you could use more sleep (currently ${sleep.avg.toFixed(1)}hrs avg). `;
+    }
+    if (exercise.days_zero >= 5) {
+        defaultResponse += `try to add a little movement to your day. `;
+    }
+
+    defaultResponse += `Is there something specific I can help you with? I can give advice on money, food, sleep, stress, exercise, or studying.`;
+
+    return defaultResponse;
+}
+
+// ============================================================
+// Generate quick-reply suggestions based on context
+// ============================================================
+function getSuggestions(context) {
+    const suggestions = [];
+
+    if (context.burnout.score >= 4) {
+        suggestions.push('How can I reduce my stress?');
+    }
+    if (context.sleep.avg < 7) {
+        suggestions.push('Help me sleep better');
+    }
+    if (context.foodSpend > 8) {
+        suggestions.push('Show me budget meal ideas');
+    }
+    if (context.exercise.days_zero >= 3) {
+        suggestions.push('How do I start exercising?');
+    }
+
+    // Always offer these
+    suggestions.push('What should I focus on today?');
+
+    return suggestions.slice(0, 4);
+}
+
+// ============================================================
+// Generate personalized suggestions from ALL user data
+// ============================================================
+function generatePersonalizedSuggestions(context) {
+    const suggestions = [];
+    const { burnout, sleep, stress, exercise, foodSpend, whatWorked } = context;
+
+    // High burnout + no exercise
+    if (burnout.score >= 7 && exercise.days_zero >= 3) {
+        suggestions.push({
+            type: 'exercise',
+            text: 'Try movement, even 5 minutes helps. What time works for a short walk?',
+            priority: 'high'
+        });
+    }
+
+    // Overspending on food + high stress (stress eating?)
+    if (foodSpend > 10 && stress.avg >= 6) {
+        suggestions.push({
+            type: 'food',
+            text: `Stress eating? Your food spend is $${foodSpend.toFixed(2)}/day when stressed. Try these $3 meal alternatives you might like.`,
+            priority: 'medium'
+        });
+    }
+
+    // Poor sleep + too much studying
+    if (sleep.avg < 6 && context.health && context.health.study_hours > 6) {
+        suggestions.push({
+            type: 'sleep',
+            text: 'You\'re overworking and underslept. Rest actually improves learning. Set a 10 PM stop time tonight.',
+            priority: 'high'
+        });
+    }
+
+    // Past recommendation that worked
+    if (whatWorked.length > 0) {
+        const past = whatWorked[0];
+        suggestions.push({
+            type: 'reminder',
+            text: `Remember when this helped you before: "${past.text}" - try it again!`,
+            priority: 'medium'
+        });
+    }
+
+    // Low exercise
+    if (exercise.avg < 10 && burnout.score < 7) {
+        suggestions.push({
+            type: 'exercise',
+            text: 'Start small: 10-minute walk today? It boosts mood and focus for hours.',
+            priority: 'low'
+        });
+    }
+
+    // Good habits - reinforce
+    if (burnout.score <= 3 && sleep.avg >= 7) {
+        suggestions.push({
+            type: 'motivation',
+            text: 'You\'re doing great! Your sleep and stress are well-managed. Keep this routine going.',
+            priority: 'low'
+        });
+    }
+
+    return suggestions;
+}
