@@ -80,13 +80,19 @@ module.exports = function (db, authenticateToken) {
         SELECT COUNT(*) as days FROM health_logs WHERE user_id = ?
       `).get(req.user.id);
 
+            // Get most recent daily check-in log
+            const latestCheckin = db.prepare(`
+        SELECT * FROM health_logs WHERE user_id = ? ORDER BY date DESC LIMIT 1
+      `).get(req.user.id);
+
             if (!latest) {
                 return res.json({
                     score: null,
                     alert_level: 'unknown',
                     message: 'No burnout data yet. Complete daily check-ins for at least 7 days to get your score.',
                     days_logged: checkinCount.days,
-                    days_needed: Math.max(0, 7 - checkinCount.days)
+                    days_needed: Math.max(0, 7 - checkinCount.days),
+                    latest_checkin: latestCheckin
                 });
             }
 
@@ -108,7 +114,8 @@ module.exports = function (db, authenticateToken) {
                     exercise: latest.current_exercise
                 },
                 interpretation,
-                days_logged: checkinCount.days
+                days_logged: checkinCount.days,
+                latest_checkin: latestCheckin
             });
         } catch (err) {
             console.error('Burnout score error:', err);

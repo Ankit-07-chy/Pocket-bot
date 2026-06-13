@@ -120,6 +120,92 @@ module.exports = function (db, authenticateToken) {
         }
     });
 
+    const { generateRecommendation, generatePurchaseAdvice } = require('../gemini');
+
+    // GET /api/support/recommendation - Generate AI wellness & finance recommendation
+    router.get('/recommendation', authenticateToken, async (req, res) => {
+        try {
+            const context = gatherUserContext(db, req.user.id);
+            
+            // Extract parameters for prompt
+            const latestHealth = context.health || { sleep_hours: 8, stress_level: 1, mood: 'neutral' };
+            const totalSpent = context.expenses.reduce((sum, e) => sum + e.total, 0);
+            const foodExpense = context.expenses.find(e => e.category === 'food')?.total || 0;
+            const foodPercent = totalSpent > 0 ? (foodExpense / totalSpent) * 100 : 0;
+            
+            const aiData = {
+                sleep_hours: latestHealth.sleep_hours,
+                stress_level: latestHealth.stress_level,
+                mood: latestHealth.mood,
+                monthly_pocket_money: context.user?.monthly_income || 0,
+                total_spent: totalSpent,
+                food_percent: foodPercent
+            };
+            
+            const rec = await generateRecommendation(aiData);
+            
+            // Save to DB
+            const date = new Date().toISOString().split('T')[0];
+            db.prepare(`
+                INSERT INTO recommendations (user_id, date, type, text)
+                VALUES (?, ?, ?, ?)
+            `).run(req.user.id, date, rec.type, rec.message);
+            
+            res.json({
+                type: rec.type,
+                message: rec.message,
+                created_at: new Date().toISOString()
+            });
+        } catch (err) {
+            console.error('Gemini recommendation error:', err);
+            res.status(500).json({ error: 'Failed to generate recommendation.' });
+        }
+    });
+
+    // POST /api/support/purchase-advice - Buy advisor
+    router.post('/purchase-advice', authenticateToken, async (req, res) => {
+        try {
+            const { name, cost } = req.body;
+            if (!name || cost === undefined) {
+                return res.status(400).json({ error: 'Item name and cost are required.' });
+            }
+            
+            const context = gatherUserContext(db, req.user.id);
+            
+            // Financial analytics
+            const monthlyPocketMoney = context.user?.monthly_income || 0;
+            const totalExpenses = db.prepare(`
+                SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ?
+            `).get(req.user.id).total;
+            
+            const remainingBalance = monthlyPocketMoney - totalExpenses;
+            
+            // Calculate safe daily spending
+            const today = new Date();
+            const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+            const remainingDays = Math.max(1, lastDay - today.getDate());
+            const safeDailySpending = remainingBalance > 0 ? (remainingBalance / remainingDays) : 0;
+            
+            const aiContext = {
+                remaining_balance: remainingBalance,
+                safe_daily_spending: safeDailySpending,
+                total_spent: totalExpenses
+            };
+            
+            const advice = await generatePurchaseAdvice(aiContext, name, parseFloat(cost));
+            
+            res.json({
+                affordable: advice.affordable,
+                message: advice.message,
+                remaining_balance: remainingBalance,
+                safe_daily_spending: safeDailySpending
+            });
+        } catch (err) {
+            console.error('Purchase advisor error:', err);
+            res.status(500).json({ error: 'Failed to process purchase advice.' });
+        }
+    });
+
     return router;
 };
 

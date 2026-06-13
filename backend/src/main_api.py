@@ -10,6 +10,10 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Optional
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+from pathlib import Path
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # ==================== PRODUCTION-READY PATH HANDLING ====================
 def setup_project_paths():
@@ -89,14 +93,14 @@ except ImportError as e:
         if str(expense_mgmt_path) not in sys.path:
             sys.path.insert(0, str(expense_mgmt_path))
 
-        from initialize_boundary import ExpenseInitializer
-        from alert_system import AlertSystem
-        from trend_analyzer import TrendAnalyzer
-        from forecaster import ExpenseForecaster
-        from firebase_service import FirebaseExpenseService
-        from expense_analyzer import ExpenseAnalyzer
-        from budget_planner import BudgetPlanner
-        from schemas import (
+        from expense_management.initialize_boundary import ExpenseInitializer
+        from expense_management.alert_system import AlertSystem
+        from expense_management.trend_analyzer import TrendAnalyzer
+        from expense_management.forecaster import ExpenseForecaster
+        from expense_management.firebase_service import FirebaseExpenseService
+        from expense_management.expense_analyzer import ExpenseAnalyzer
+        from expense_management.budget_planner import BudgetPlanner
+        from expense_management.schemas import (
             InitializeUserRequest, InitializeUserResponse,
             CustomBudgetRequest, BudgetPlanResponse,
             MonthlyTrendResponse, CategoryTrendResponse,
@@ -131,6 +135,7 @@ except ImportError as e:
         planner = MockService()
 
         try:
+            # pyrefly: ignore [missing-import]
             from schemas import (
                 InitializeUserRequest, InitializeUserResponse,
                 CustomBudgetRequest, BudgetPlanResponse,

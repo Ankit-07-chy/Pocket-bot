@@ -93,7 +93,7 @@ module.exports = function (db, authenticateToken) {
     // No service account needed — trusts client-side Firebase auth
     router.post('/firebase-sync', (req, res) => {
         try {
-            const { name, email, uid, major, year, monthly_income } = req.body;
+            const { name, email, uid, major, student_type, year, monthly_income } = req.body;
 
             if (!email) {
                 return res.status(400).json({ error: 'Email is required.' });
@@ -108,11 +108,11 @@ module.exports = function (db, authenticateToken) {
                 const dailyBudget = income > 0 ? Math.round((income / 30) * 100) / 100 : 0;
 
                 const result = db.prepare(`
-          INSERT INTO users (email, password, name, major, year, monthly_income, daily_budget)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(email, `firebase:${uid || 'user'}`, displayName, major || '', year || 1, income, dailyBudget);
+          INSERT INTO users (email, password, name, major, student_type, year, monthly_income, daily_budget)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(email, `firebase:${uid || 'user'}`, displayName, major || '', student_type || '', year || 1, income, dailyBudget);
 
-                user = { id: result.lastInsertRowid, email, name: displayName, major: major || '', year: year || 1, monthly_income: income, daily_budget: dailyBudget };
+                user = { id: result.lastInsertRowid, email, name: displayName, major: major || '', student_type: student_type || '', year: year || 1, monthly_income: income, daily_budget: dailyBudget };
             } else if (name && name !== user.name) {
                 // Update name if changed
                 db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name, user.id);
@@ -121,7 +121,7 @@ module.exports = function (db, authenticateToken) {
 
             res.json({
                 message: 'User synced!',
-                user: { id: user.id, email: user.email, name: user.name, major: user.major, year: user.year, monthly_income: user.monthly_income, daily_budget: user.daily_budget }
+                user: { id: user.id, email: user.email, name: user.name, major: user.major, student_type: user.student_type, year: user.year, monthly_income: user.monthly_income, daily_budget: user.daily_budget }
             });
         } catch (err) {
             console.error('Firebase sync error:', err);
@@ -132,7 +132,7 @@ module.exports = function (db, authenticateToken) {
     // GET /api/auth/profile
     router.get('/profile', authenticateToken, (req, res) => {
         const user = db.prepare(`
-      SELECT id, email, name, major, year, monthly_income, daily_budget, dietary_preferences, emergency_contact, created_at
+      SELECT id, email, name, major, student_type, year, monthly_income, daily_budget, dietary_preferences, emergency_contact, created_at
       FROM users WHERE id = ?
     `).get(req.user.id);
 
@@ -142,15 +142,15 @@ module.exports = function (db, authenticateToken) {
 
     // PUT /api/auth/profile
     router.put('/profile', authenticateToken, (req, res) => {
-        const { name, major, year, monthly_income, daily_budget, dietary_preferences, emergency_contact } = req.body;
+        const { name, major, student_type, year, monthly_income, daily_budget, dietary_preferences, emergency_contact } = req.body;
 
         db.prepare(`
       UPDATE users SET
-        name = COALESCE(?, name), major = COALESCE(?, major), year = COALESCE(?, year),
+        name = COALESCE(?, name), major = COALESCE(?, major), student_type = COALESCE(?, student_type), year = COALESCE(?, year),
         monthly_income = COALESCE(?, monthly_income), daily_budget = COALESCE(?, daily_budget),
         dietary_preferences = COALESCE(?, dietary_preferences), emergency_contact = COALESCE(?, emergency_contact)
       WHERE id = ?
-    `).run(name, major, year, monthly_income, daily_budget, dietary_preferences, emergency_contact, req.user.id);
+    `).run(name, major, student_type, year, monthly_income, daily_budget, dietary_preferences, emergency_contact, req.user.id);
 
         res.json({ message: 'Profile updated.' });
     });
