@@ -1,0 +1,8 @@
+node_modules/
+client/node_modules/
+client/build/
+database/*.db
+.env
+
+# Firebase service account key (NEVER commit this)
+server/firebase/serviceAccountKey.json

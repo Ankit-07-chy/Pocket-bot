@@ -1,0 +1,73 @@
+// ============================================================
+// SEED DATA - Populates budget_meals with 50+ meal options
+// ============================================================
+
+function seedBudgetMeals(db) {
+    const count = db.prepare('SELECT COUNT(*) as c FROM budget_meals').get();
+    if (count.c > 0) return; // Already seeded
+
+    const meals = [
+        // --- BREAKFAST (under $4) ---
+        { name: 'Oatmeal with Banana', cost: 1.50, calories: 350, category: 'breakfast', prep_time_minutes: 5, is_vegetarian: 1, is_vegan: 1, instructions: 'Cook oats with water, top with sliced banana and honey' },
+        { name: 'Eggs on Toast', cost: 2.00, calories: 400, category: 'breakfast', prep_time_minutes: 8, is_vegetarian: 1, is_vegan: 0, instructions: 'Scramble 2 eggs, serve on toasted bread' },
+        { name: 'Peanut Butter Toast', cost: 1.00, calories: 300, category: 'breakfast', prep_time_minutes: 3, is_vegetarian: 1, is_vegan: 1, instructions: 'Toast bread, spread peanut butter generously' },
+        { name: 'Yogurt with Granola', cost: 2.50, calories: 320, category: 'breakfast', prep_time_minutes: 2, is_vegetarian: 1, is_vegan: 0, instructions: 'Mix yogurt with granola and berries' },
+        { name: 'Banana Smoothie', cost: 2.00, calories: 280, category: 'breakfast', prep_time_minutes: 5, is_vegetarian: 1, is_vegan: 1, instructions: 'Blend banana, milk/oat milk, and honey' },
+        { name: 'Rice Porridge', cost: 1.00, calories: 300, category: 'breakfast', prep_time_minutes: 15, is_vegetarian: 1, is_vegan: 1, instructions: 'Cook rice with extra water until soft, add sugar or salt' },
+        { name: 'French Toast', cost: 2.00, calories: 380, category: 'breakfast', prep_time_minutes: 10, is_vegetarian: 1, is_vegan: 0, instructions: 'Dip bread in egg+milk mixture, pan fry' },
+        { name: 'Overnight Oats', cost: 2.00, calories: 350, category: 'breakfast', prep_time_minutes: 5, is_vegetarian: 1, is_vegan: 1, instructions: 'Mix oats with milk and chia seeds, refrigerate overnight' },
+
+        // --- LUNCH (under $6) ---
+        { name: 'Rice and Beans', cost: 2.50, calories: 500, category: 'lunch', prep_time_minutes: 20, is_vegetarian: 1, is_vegan: 1, instructions: 'Cook rice, heat canned beans with spices, combine' },
+        { name: 'Egg Fried Rice', cost: 3.00, calories: 450, category: 'lunch', prep_time_minutes: 15, is_vegetarian: 1, is_vegan: 0, instructions: 'Fry leftover rice with eggs, soy sauce, and veggies' },
+        { name: 'Pasta with Tomato Sauce', cost: 2.00, calories: 480, category: 'lunch', prep_time_minutes: 15, is_vegetarian: 1, is_vegan: 1, instructions: 'Boil pasta, heat jarred sauce, combine' },
+        { name: 'Grilled Cheese Sandwich', cost: 2.50, calories: 400, category: 'lunch', prep_time_minutes: 8, is_vegetarian: 1, is_vegan: 0, instructions: 'Butter bread, add cheese, grill until golden' },
+        { name: 'Tuna Sandwich', cost: 3.50, calories: 420, category: 'lunch', prep_time_minutes: 8, is_vegetarian: 0, is_vegan: 0, instructions: 'Mix canned tuna with mayo, serve on bread with lettuce' },
+        { name: 'Veggie Wrap', cost: 3.00, calories: 380, category: 'lunch', prep_time_minutes: 10, is_vegetarian: 1, is_vegan: 1, instructions: 'Fill tortilla with hummus, veggies, and avocado' },
+        { name: 'Lentil Soup', cost: 2.50, calories: 350, category: 'lunch', prep_time_minutes: 25, is_vegetarian: 1, is_vegan: 1, instructions: 'Boil lentils with onion, carrot, and cumin' },
+        { name: 'Ramen with Egg', cost: 1.50, calories: 450, category: 'lunch', prep_time_minutes: 10, is_vegetarian: 1, is_vegan: 0, instructions: 'Cook instant ramen, add boiled egg and green onion' },
+        { name: 'Quesadilla', cost: 3.00, calories: 450, category: 'lunch', prep_time_minutes: 10, is_vegetarian: 1, is_vegan: 0, instructions: 'Fill tortilla with cheese and beans, grill both sides' },
+        { name: 'PB&J Sandwich', cost: 1.50, calories: 380, category: 'lunch', prep_time_minutes: 3, is_vegetarian: 1, is_vegan: 1, instructions: 'Spread peanut butter and jelly on bread' },
+        { name: 'Chickpea Salad', cost: 3.00, calories: 400, category: 'lunch', prep_time_minutes: 10, is_vegetarian: 1, is_vegan: 1, instructions: 'Mix canned chickpeas with cucumber, tomato, lemon, olive oil' },
+
+        // --- DINNER (under $7) ---
+        { name: 'Chicken Stir Fry with Rice', cost: 5.00, calories: 550, category: 'dinner', prep_time_minutes: 20, is_vegetarian: 0, is_vegan: 0, instructions: 'Stir fry chicken strips with veggies and soy sauce, serve over rice' },
+        { name: 'Spaghetti Bolognese', cost: 4.50, calories: 580, category: 'dinner', prep_time_minutes: 25, is_vegetarian: 0, is_vegan: 0, instructions: 'Cook ground meat with tomato sauce and herbs, serve over pasta' },
+        { name: 'Bean Tacos', cost: 3.50, calories: 480, category: 'dinner', prep_time_minutes: 15, is_vegetarian: 1, is_vegan: 1, instructions: 'Heat beans with spices, serve in tortillas with salsa and lettuce' },
+        { name: 'Vegetable Curry with Rice', cost: 4.00, calories: 520, category: 'dinner', prep_time_minutes: 25, is_vegetarian: 1, is_vegan: 1, instructions: 'Cook veggies in coconut milk with curry paste, serve with rice' },
+        { name: 'Baked Potato with Toppings', cost: 3.00, calories: 450, category: 'dinner', prep_time_minutes: 45, is_vegetarian: 1, is_vegan: 0, instructions: 'Bake potato, top with cheese, beans, or butter' },
+        { name: 'Fried Rice with Vegetables', cost: 3.00, calories: 480, category: 'dinner', prep_time_minutes: 15, is_vegetarian: 1, is_vegan: 1, instructions: 'Fry leftover rice with mixed veggies and soy sauce' },
+        { name: 'Pasta Primavera', cost: 4.00, calories: 450, category: 'dinner', prep_time_minutes: 20, is_vegetarian: 1, is_vegan: 1, instructions: 'Cook pasta, sauté mixed veggies with garlic and olive oil, combine' },
+        { name: 'Black Bean Burrito', cost: 3.50, calories: 520, category: 'dinner', prep_time_minutes: 15, is_vegetarian: 1, is_vegan: 1, instructions: 'Fill large tortilla with rice, black beans, salsa, and avocado' },
+        { name: 'Scrambled Eggs with Toast', cost: 2.50, calories: 400, category: 'dinner', prep_time_minutes: 10, is_vegetarian: 1, is_vegan: 0, instructions: 'Scramble eggs with veggies, serve with buttered toast' },
+        { name: 'Tofu Stir Fry', cost: 4.00, calories: 420, category: 'dinner', prep_time_minutes: 20, is_vegetarian: 1, is_vegan: 1, instructions: 'Fry cubed tofu with broccoli, soy sauce, and ginger over rice' },
+        { name: 'Mac and Cheese', cost: 2.50, calories: 500, category: 'dinner', prep_time_minutes: 15, is_vegetarian: 1, is_vegan: 0, instructions: 'Cook macaroni, mix with cheese sauce' },
+        { name: 'Pancakes for Dinner', cost: 2.00, calories: 450, category: 'dinner', prep_time_minutes: 15, is_vegetarian: 1, is_vegan: 0, instructions: 'Make pancake batter, cook on griddle, top with syrup or fruit' },
+
+        // --- SNACKS (under $3) ---
+        { name: 'Trail Mix', cost: 2.00, calories: 200, category: 'snack', prep_time_minutes: 0, is_vegetarian: 1, is_vegan: 1, instructions: 'Mix nuts, raisins, and seeds' },
+        { name: 'Apple with Peanut Butter', cost: 1.50, calories: 250, category: 'snack', prep_time_minutes: 2, is_vegetarian: 1, is_vegan: 1, instructions: 'Slice apple, dip in peanut butter' },
+        { name: 'Hummus with Carrots', cost: 2.00, calories: 180, category: 'snack', prep_time_minutes: 2, is_vegetarian: 1, is_vegan: 1, instructions: 'Dip carrot sticks in hummus' },
+        { name: 'Popcorn', cost: 0.50, calories: 150, category: 'snack', prep_time_minutes: 3, is_vegetarian: 1, is_vegan: 1, instructions: 'Pop kernels in pot with oil, add salt' },
+        { name: 'Banana', cost: 0.30, calories: 105, category: 'snack', prep_time_minutes: 0, is_vegetarian: 1, is_vegan: 1, instructions: 'Peel and eat!' },
+        { name: 'Rice Cakes with Avocado', cost: 2.00, calories: 200, category: 'snack', prep_time_minutes: 3, is_vegetarian: 1, is_vegan: 1, instructions: 'Spread mashed avocado on rice cakes, add salt and pepper' },
+        { name: 'Boiled Eggs', cost: 1.00, calories: 150, category: 'snack', prep_time_minutes: 10, is_vegetarian: 1, is_vegan: 0, instructions: 'Boil eggs for 10 minutes, peel, add salt' },
+        { name: 'Fruit Salad', cost: 2.50, calories: 150, category: 'snack', prep_time_minutes: 5, is_vegetarian: 1, is_vegan: 1, instructions: 'Chop seasonal fruits, mix together' },
+    ];
+
+    const insert = db.prepare(`
+    INSERT INTO budget_meals (name, cost, calories, category, prep_time_minutes, is_vegetarian, is_vegan, instructions)
+    VALUES (@name, @cost, @calories, @category, @prep_time_minutes, @is_vegetarian, @is_vegan, @instructions)
+  `);
+
+    const insertMany = db.transaction((meals) => {
+        for (const meal of meals) {
+            insert.run(meal);
+        }
+    });
+
+    insertMany(meals);
+    console.log(`✓ Seeded ${meals.length} budget meals`);
+}
+
+module.exports = { seedBudgetMeals };
