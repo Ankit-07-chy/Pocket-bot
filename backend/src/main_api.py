@@ -175,31 +175,20 @@ except ImportError as e:
 
 # ==================== FIREBASE INITIALIZATION ====================
 import firebase_admin
-from firebase_admin import credentials, db
+from firebase_admin import db
 
-# Find service account key
-service_account_path = PROJECT_ROOT / 'backend' / 'serviceAccountKey.json'
-if not service_account_path.exists():
-    service_account_path = PROJECT_ROOT / 'serviceAccountKey.json'
-if not service_account_path.exists():
-    service_account_path = Path.cwd() / 'serviceAccountKey.json'
-
-# Initialize Firebase (only if credentials exist and not already initialized)
+# Initialize Firebase (works without service account credentials)
 firebase_initialized = False
-if service_account_path.exists():
-    try:
-        if not firebase_admin._apps:
-            cred = credentials.Certificate(str(service_account_path))
-            firebase_admin.initialize_app(cred, {
-                'databaseURL': os.getenv('FIREBASE_DATABASE_URL', 'https://your-database.firebaseio.com/')
-            })
-        firebase_initialized = True
-        print(f"✅ Firebase initialized with: {service_account_path}")
-    except Exception as e:
-        print(f"⚠ Firebase initialization error: {e}")
-else:
-    print(f"⚠ Service account not found at: {service_account_path}")
-    print("⚠ Running without Firebase authentication")
+try:
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(options={
+            'databaseURL': os.getenv('FIREBASE_DATABASE_URL', 'https://your-database.firebaseio.com/')
+        })
+    firebase_initialized = True
+    print(f"✅ Firebase initialized with Realtime Database")
+except Exception as e:
+    print(f"⚠ Firebase Realtime Database error: {e}")
+    print("⚠ Services will run in mock mode")
 
 # ==================== FASTAPI APP ====================
 app = FastAPI(
