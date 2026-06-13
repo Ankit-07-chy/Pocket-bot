@@ -3,11 +3,17 @@ Rule-based support system for common financial questions and patterns
 """
 
 import re
+import sys
+import os
 import logging
 from typing import Optional, List, Dict, Any, Tuple
 from enum import Enum
 
-from .schemas import RuleBasedResponse
+try:
+    from .schemas import RuleBasedResponse
+except ImportError:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    from personalised_support.schemas import RuleBasedResponse
 
 logger = logging.getLogger(__name__)
 

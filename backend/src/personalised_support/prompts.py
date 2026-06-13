@@ -1,10 +1,10 @@
 """
-LangChain prompt templates for personalized support chatbot
+Prompt templates for personalized support chatbot
 """
-from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
-from langchain_core.prompts import FewShotPromptTemplate
+from __future__ import annotations
+from typing import Optional
 
-# System prompt for financial support chatbot
+# System prompt for financial support chatbot — user context is injected at runtime
 SYSTEM_PROMPT = """You are a compassionate and knowledgeable personal finance support assistant for Poket Bot,
 an expense management application. Your role is to help users with:
 
@@ -19,66 +19,74 @@ Your communication style should be:
 - Empathetic and non-judgmental
 - Clear and easy to understand
 - Encouraging and motivating
-- Data-driven when possible
+- Data-driven when possible (reference the user's actual numbers when available)
 - Practical and actionable
 
-You have access to the user's expense data and can provide personalized advice."""
+Always personalise your advice using the user context provided to you."""
 
-user_prompt = None # ---------- Here To load prompt and make full prompt
-prompt = prompt = SYSTEM_PROMPT + "\n\nUser Context:\n" + user_prompt
 
-# Main chat template
-CHAT_TEMPLATE = ChatPromptTemplate.from_messages([
-    ("system", prompt),
-    ("human", "{input}"),
-    ("ai", "{chat_history}"),
-])
+def build_system_prompt(user_context: Optional[dict] = None) -> str:
+    """
+    Build a full system prompt, optionally injecting the user's financial context.
 
-# Few-shot examples for budget advice
-BUDGET_EXAMPLES = [
-    {
-        "question": "How can I reduce my food expenses?",
-        "answer": """Great question! Here are some practical strategies:
+    Args:
+        user_context: dict with keys such as:
+            - current_month_total (float)
+            - previous_month_total (float)
+            - budget (float)
+            - category_spending (dict[str, float])
+            - biggest_category (str)
+            - trend (str)  e.g. "increasing", "decreasing", "stable"
+            - budget_status (str)  e.g. "within budget", "over budget"
 
-1. **Meal Planning**: Plan your meals weekly and create a shopping list to avoid impulse purchases
-2. **Track Categories**: Break down food into groceries vs dining out - most people spend 30-40% more on restaurants
-3. **Set Limits**: Consider a weekly food budget and track against it
-4. **Smart Shopping**: Shop during sales, use coupons, and consider store brands
-5. **Cook More**: Cooking at home is typically 3-5x cheaper than eating out
+    Returns:
+        Full system prompt string.
+    """
+    prompt = SYSTEM_PROMPT
 
-From your spending patterns, I notice you spend more on weekends. Would you like strategies specifically for weekend spending?"""
-    },
-    {
-        "question": "I'm overspending in my entertainment category",
-        "answer": """Let me help you get control of entertainment spending. First, let's understand:
+    if user_context:
+        lines = ["\n\n--- User Financial Context ---"]
 
-1. **Categorize**: Is this subscriptions, events, hobbies, or streaming services?
-2. **Audit**: Review last month's transactions - you might find forgotten subscriptions
-3. **Set Boundaries**: Decide a realistic budget that still allows fun activities
-4. **Alternatives**: Free or low-cost activities in your area
-5. **Timing**: Reduce spending during high-risk times (evenings, weekends)
+        if user_context.get("current_month_total") is not None:
+            lines.append(f"Current month spending: ₹{user_context['current_month_total']:,.2f}")
 
-A common pattern is subscription creep - many people have 3-5 forgotten subscriptions. Would you like me to help review yours?"""
-    },
-]
+        if user_context.get("previous_month_total") is not None:
+            lines.append(f"Previous month spending: ₹{user_context['previous_month_total']:,.2f}")
 
-BUDGET_PROMPT = FewShotPromptTemplate(
-    examples=BUDGET_EXAMPLES,
-    example_prompt=PromptTemplate(
-        input_variables=["question", "answer"],
-        template="Question: {question}\nAnswer: {answer}"
-    ),
-    prefix="You are a budget expert helping users reduce expenses.\n\n{examples}",
-    suffix="Question: {question}\nAnswer:",
-    input_variables=["question"]
-)
+        if user_context.get("budget") is not None:
+            lines.append(f"Monthly budget: ₹{user_context['budget']:,.2f}")
 
-# Spending analysis template
+        if user_context.get("budget_status"):
+            lines.append(f"Budget status: {user_context['budget_status']}")
+
+        if user_context.get("biggest_category"):
+            lines.append(f"Biggest spending category: {user_context['biggest_category']}")
+
+        if user_context.get("trend"):
+            lines.append(f"Spending trend: {user_context['trend']}")
+
+        if user_context.get("category_spending"):
+            cat_lines = ", ".join(
+                f"{cat}: ₹{amt:,.2f}"
+                for cat, amt in user_context["category_spending"].items()
+            )
+            lines.append(f"Category breakdown: {cat_lines}")
+
+        lines.append("--- End of Context ---")
+        prompt += "\n".join(lines)
+
+    return prompt
+
+
+# ---------------------------------------------------------------------------
+# Standalone template strings (used by langchain_chatbot for direct prompts)
+# ---------------------------------------------------------------------------
+
 SPENDING_ANALYSIS_TEMPLATE = """Analyze the following spending data and provide insights:
 
 User: {user_id}
-Current Month Total: ${current_total}
-Previous Month Total: ${previous_total}
+Current Month Total: ₹{current_total}
+Previous Month Total: ₹{previous_total}
 Top Categories: {categories}
 Budget Status: {budget_status}
 Trend: {trend}
@@ -91,18 +99,13 @@ Provide:
 
 Keep response concise and motivating."""
 
-SPENDING_ANALYSIS_PROMPT = PromptTemplate(
-    input_variables=["user_id", "current_total", "previous_total", "categories", "budget_status", "trend"],
-    template=SPENDING_ANALYSIS_TEMPLATE
-)
 
-# Goal setting template
 GOAL_SETTING_TEMPLATE = """Help the user set a realistic financial goal based on their data:
 
 Current Situation:
-- Monthly Income: ${monthly_income}
-- Current Spending: ${current_spending}
-- Budget: ${budget}
+- Monthly Income: ₹{monthly_income}
+- Current Spending: ₹{current_spending}
+- Budget: ₹{budget}
 - Goal: {goal_description}
 
 Provide:
@@ -114,17 +117,12 @@ Provide:
 
 Be honest but encouraging."""
 
-GOAL_SETTING_PROMPT = PromptTemplate(
-    input_variables=["monthly_income", "current_spending", "budget", "goal_description"],
-    template=GOAL_SETTING_TEMPLATE
-)
 
-# Contextual advice template
 CONTEXTUAL_ADVICE_TEMPLATE = """Provide personalized financial advice based on user context:
 
 User Profile:
 - Spending Pattern: {spending_pattern}
-- Monthly Budget: ${budget}
+- Monthly Budget: ₹{budget}
 - Biggest Expense: {biggest_expense}
 - Recent Trend: {trend}
 
@@ -138,13 +136,8 @@ Provide advice that:
 
 Keep it concise (2-3 paragraphs)."""
 
-CONTEXTUAL_ADVICE_PROMPT = PromptTemplate(
-    input_variables=["spending_pattern", "budget", "biggest_expense", "trend", "user_input"],
-    template=CONTEXTUAL_ADVICE_TEMPLATE
-)
 
-# Emergency financial support template
-CRISIS_SUPPORT_TEMPLATE = """The user is experiencing financial stress or crisis. Respond with:
+CRISIS_SUPPORT_TEMPLATE = """The user is experiencing financial stress or crisis.
 
 Situation: {situation}
 User's Emotion: {emotional_state}
@@ -158,12 +151,7 @@ Provide:
 
 Be compassionate, practical, and clear about limitations of this support."""
 
-CRISIS_SUPPORT_PROMPT = PromptTemplate(
-    input_variables=["situation", "emotional_state"],
-    template=CRISIS_SUPPORT_TEMPLATE
-)
 
-# Template for analyzing conversation context
 CONVERSATION_CONTEXT_TEMPLATE = """You are an expert at understanding financial conversations.
 
 Conversation so far:
@@ -178,9 +166,4 @@ Determine:
 4. Type of support needed (educational, practical, emotional, urgent)
 5. Key context from conversation
 
-Format as JSON."""
-
-CONVERSATION_CONTEXT_PROMPT = PromptTemplate(
-    input_variables=["conversation_history", "latest_message"],
-    template=CONVERSATION_CONTEXT_TEMPLATE
-)
+Format as JSON with keys: issues (list), support_type (ai/rule_based/peer), urgency (low/medium/high), confidence (0-1), reasoning (string)."""

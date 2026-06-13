@@ -6,6 +6,21 @@ import os
 from typing import Optional, List
 from enum import Enum
 
+# Load .env automatically so this config works whether the server uses
+# a dotenv loader or a file is run directly during development.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    # Walk up from this file's location to find the .env at the project root
+    _here = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(6):  # max 6 levels up
+        _candidate = os.path.join(_here, ".env")
+        if os.path.exists(_candidate):
+            _load_dotenv(_candidate, override=False)
+            break
+        _here = os.path.dirname(_here)
+except ImportError:
+    pass  # python-dotenv not installed; rely on the shell environment
+
 
 class LLMProvider(Enum):
     """Available LLM providers"""
@@ -20,15 +35,17 @@ class SupportConfig:
     """Configuration for support system"""
 
     # LLM Provider Configuration
-    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "ollama").lower()
+    # Defaults to "groq" because the project ships with a Groq API key.
+    # Override with LLM_PROVIDER=ollama in .env to use a local model instead.
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "groq").lower()
 
     # Ollama Configuration (Local, completely free)
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "mistral")
 
-    # Groq Configuration (Free API)
+    # Groq Configuration (Free API — llama-3.3-70b-versatile is on the free tier)
     GROQ_API_KEY: Optional[str] = os.getenv("GROQ_API_KEY")
-    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "mixtral-8x7b-32768")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
     # HuggingFace Configuration (Free inference)
     HUGGINGFACE_API_KEY: Optional[str] = os.getenv("HUGGINGFACE_API_KEY")

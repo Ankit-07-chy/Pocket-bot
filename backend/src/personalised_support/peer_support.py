@@ -3,13 +3,21 @@ Peer support system for connecting users with experienced peers
 """
 
 import uuid
+import sys
+import os
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 import logging
 
-from .schemas import (
-    PeerProfile, PeerSupportConnection, PeerSupportRequest, ChatMessage
-)
+try:
+    from .schemas import (
+        PeerProfile, PeerSupportConnection, PeerSupportRequest, ChatMessage
+    )
+except ImportError:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    from personalised_support.schemas import (
+        PeerProfile, PeerSupportConnection, PeerSupportRequest, ChatMessage
+    )
 
 logger = logging.getLogger(__name__)
 
