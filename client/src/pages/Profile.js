@@ -70,18 +70,18 @@ function Profile() {
                     <div className="form-row">
                         <div className="form-group">
                             <label htmlFor="prof-name">Name</label>
-                            <input id="prof-name" value={form.name}
+                            <input id="prof-name" type="text" value={form.name}
                                 onChange={(e) => setForm({ ...form, name: e.target.value })} />
                         </div>
                         <div className="form-group">
                             <label htmlFor="prof-email">Email</label>
-                            <input id="prof-email" value={profile.email} disabled style={{ opacity: 0.6 }} />
+                            <input id="prof-email" type="email" value={profile.email} disabled style={{ opacity: 0.6 }} />
                         </div>
                     </div>
                     <div className="form-row">
                         <div className="form-group">
                             <label htmlFor="prof-major">Major</label>
-                            <input id="prof-major" value={form.major}
+                            <input id="prof-major" type="text" value={form.major}
                                 onChange={(e) => setForm({ ...form, major: e.target.value })} />
                         </div>
                         <div className="form-group">
@@ -110,13 +110,13 @@ function Profile() {
                     </div>
                     <div className="form-group">
                         <label htmlFor="prof-diet">Dietary Preferences (comma separated)</label>
-                        <input id="prof-diet" value={form.dietary_preferences === '[]' ? '' : form.dietary_preferences}
+                        <input id="prof-diet" type="text" value={form.dietary_preferences === '[]' ? '' : form.dietary_preferences}
                             onChange={(e) => setForm({ ...form, dietary_preferences: e.target.value })}
                             placeholder="e.g. vegetarian, no dairy" />
                     </div>
                     <div className="form-group">
                         <label htmlFor="prof-emergency">Emergency Contact</label>
-                        <input id="prof-emergency" value={form.emergency_contact}
+                        <input id="prof-emergency" type="text" value={form.emergency_contact}
                             onChange={(e) => setForm({ ...form, emergency_contact: e.target.value })}
                             placeholder="Name - Phone Number" />
                     </div>
@@ -144,7 +144,7 @@ function Profile() {
                     <div>
                         <p style={{ marginBottom: '12px', fontWeight: '500' }}>{emergency.message}</p>
                         {emergency.resources.map((r, i) => (
-                            <div key={i} style={{ padding: '10px', marginBottom: '8px', background: '#f8fafc', borderRadius: '8px' }}>
+                            <div key={i} className="meal-card">
                                 <strong>{r.name}</strong>
                                 <p style={{ fontSize: '0.85rem' }}>{r.phone}</p>
                                 <p style={{ fontSize: '0.8rem', color: 'var(--text-light)' }}>{r.description}</p>

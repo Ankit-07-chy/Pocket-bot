@@ -59,13 +59,13 @@ function TravelPage() {
                         <div className="form-row">
                             <div className="form-group">
                                 <label htmlFor="origin">From</label>
-                                <input id="origin" value={form.origin}
+                                <input id="origin" type="text" value={form.origin}
                                     onChange={(e) => setForm({ ...form, origin: e.target.value })}
                                     placeholder="e.g. Dorm" required />
                             </div>
                             <div className="form-group">
                                 <label htmlFor="destination">To</label>
-                                <input id="destination" value={form.destination}
+                                <input id="destination" type="text" value={form.destination}
                                     onChange={(e) => setForm({ ...form, destination: e.target.value })}
                                     placeholder="e.g. Campus Library" required />
                             </div>

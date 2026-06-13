@@ -1,9 +1,10 @@
 """
 LLM Provider abstraction layer supporting multiple free LLM services
 """
+from __future__ import annotations
 
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
@@ -14,8 +15,19 @@ class BaseLLMProvider(ABC):
 
     @abstractmethod
     def chat(self, prompt: str, **kwargs) -> str:
-        """Generate response from prompt"""
+        """Generate response from a single prompt string."""
         pass
+
+    def chat_with_history(self, messages: List[dict], **kwargs) -> str:
+        """
+        Generate a response from a list of role/content message dicts.
+        Default implementation flattens to a plain-text prompt.
+        Subclasses should override this for proper multi-turn support.
+        """
+        plain = "\n\n".join(
+            f"{m['role'].capitalize()}: {m['content']}" for m in messages
+        )
+        return self.chat(plain, **kwargs)
 
     @abstractmethod
     def get_model_info(self) -> Dict[str, Any]:
@@ -71,46 +83,76 @@ class OllamaProvider(BaseLLMProvider):
 
 
 class GroqProvider(BaseLLMProvider):
-    """Groq API provider (free tier available)"""
+    """
+    Groq API provider (free tier).
+    Uses llama-3.3-70b-versatile which is available on the free tier.
+    Supports full multi-turn conversation via chat_with_history().
+    """
 
-    def __init__(self, api_key: str, model: str = "mixtral-8x7b-32768"):
+    # Groq free-tier model that supports the chat completions endpoint
+    DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
+    def __init__(self, api_key: str, model: str = DEFAULT_MODEL):
         self.api_key = api_key
         self.model = model
         self._client = None
         self._initialize()
 
     def _initialize(self):
-        """Initialize Groq client"""
+        """Initialize Groq client via langchain-groq."""
         try:
-            # Try newer version first
-            try:
-                from langchain_groq import ChatGroq
-            except ImportError:
-                from langchain.chat_models import ChatGroq
-
-            self._client = ChatGroq(
-                groq_api_key=self.api_key,
-                model_name=self.model,
-                temperature=0.7,
-            )
-            logger.info(f"Initialized Groq provider with model: {self.model}")
+            from langchain_groq import ChatGroq
         except ImportError as e:
-            logger.error(f"Groq not installed. Install with: pip install groq langchain-groq. Error: {e}")
+            logger.error(
+                "langchain-groq not installed. Run: pip install langchain-groq"
+            )
             raise
+
+        self._client = ChatGroq(
+            groq_api_key=self.api_key,
+            model_name=self.model,
+            temperature=0.7,
+        )
+        logger.info(f"Initialised Groq provider with model: {self.model}")
 
     def chat(self, prompt: str, **kwargs) -> str:
-        """Generate response using Groq"""
+        """Send a single-turn prompt and return the text response."""
         if not self._client:
-            raise RuntimeError("Groq client not initialized")
+            raise RuntimeError("Groq client not initialised")
+        from langchain_core.messages import HumanMessage, SystemMessage
+        response = self._client.invoke([HumanMessage(content=prompt)])
+        return response.content
 
-        try:
-            from langchain_core.messages import HumanMessage
-            message = HumanMessage(content=prompt)
-            response = self._client.invoke([message])
-            return response.content
-        except Exception as e:
-            logger.error(f"Error calling Groq: {str(e)}")
-            raise
+    def chat_with_history(self, messages: List[dict], **kwargs) -> str:
+        """
+        Send a multi-turn conversation to Groq.
+
+        Args:
+            messages: list of {"role": "system"|"user"|"assistant", "content": "..."}
+
+        Returns:
+            The assistant reply as a string.
+        """
+        if not self._client:
+            raise RuntimeError("Groq client not initialised")
+
+        from langchain_core.messages import (
+            HumanMessage, AIMessage, SystemMessage
+        )
+
+        lc_messages = []
+        for m in messages:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            if role == "system":
+                lc_messages.append(SystemMessage(content=content))
+            elif role == "assistant":
+                lc_messages.append(AIMessage(content=content))
+            else:
+                lc_messages.append(HumanMessage(content=content))
+
+        response = self._client.invoke(lc_messages)
+        return response.content
 
     def get_model_info(self) -> Dict[str, Any]:
         return {

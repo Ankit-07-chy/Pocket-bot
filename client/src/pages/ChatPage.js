@@ -65,7 +65,7 @@ function ChatPage() {
             <h1 style={{ marginBottom: '16px' }}>💬 AI Support Chat</h1>
 
             {/* Messages */}
-            <div className="chat-messages" style={{ background: 'white', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div className="chat-messages">
                 {messages.map((msg, i) => (
                     <div key={i} className={`chat-message ${msg.type}`}>
                         {msg.text}
