@@ -9,6 +9,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 try:
     from .schemas import (
@@ -274,20 +275,22 @@ async def get_available_peers(category: Optional[str] = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class PeerRegisterRequest(BaseModel):
+    peer_id: str
+    expertise_areas: List[str]
+    languages: Optional[List[str]] = None
+
+
 @router.post("/peer/register")
-async def register_peer(
-    peer_id: str,
-    expertise_areas: List[str],
-    languages: Optional[List[str]] = None,
-):
+async def register_peer(request: PeerRegisterRequest):
     """Register a new peer supporter."""
     try:
         result = chat_manager.register_peer(
-            peer_id=peer_id,
-            expertise_areas=expertise_areas,
-            languages=languages,
+            peer_id=request.peer_id,
+            expertise_areas=request.expertise_areas,
+            languages=request.languages,
         )
-        analytics.log_event("peer_registered", metadata={"peer_id": peer_id})
+        analytics.log_event("peer_registered", metadata={"peer_id": request.peer_id})
         return {"success": True, "peer": result}
     except Exception as e:
         logger.error(f"Error registering peer: {e}")

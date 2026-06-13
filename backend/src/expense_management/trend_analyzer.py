@@ -17,8 +17,7 @@ class TrendAnalyzer:
     def get_monthly_trend(self, user_id: str, months: int = 6) -> Dict:
         """Get spending trend over last N months"""
         try:
-            ref = self.firebase_service.db.reference(f'users/{user_id}/expenses')
-            all_expenses = ref.get()
+            all_expenses = self.firebase_service.get_user_expenses(user_id)
 
             if not all_expenses:
                 return {'error': 'No expenses found'}
@@ -50,8 +49,7 @@ class TrendAnalyzer:
     def get_category_trend(self, user_id: str, category: str, months: int = 6) -> Dict:
         """Get spending trend for a specific category"""
         try:
-            ref = self.firebase_service.db.reference(f'users/{user_id}/expenses')
-            all_expenses = ref.get()
+            all_expenses = self.firebase_service.get_user_expenses(user_id)
 
             if not all_expenses:
                 return {'error': 'No expenses found'}
@@ -81,8 +79,7 @@ class TrendAnalyzer:
     def compare_months(self, user_id: str, month1: str, month2: str) -> Dict:
         """Compare spending between two months (format: 'YYYY-MM')"""
         try:
-            ref = self.firebase_service.db.reference(f'users/{user_id}/expenses')
-            all_expenses = ref.get()
+            all_expenses = self.firebase_service.get_user_expenses(user_id)
 
             if not all_expenses:
                 return {'error': 'No expenses found'}
@@ -114,8 +111,7 @@ class TrendAnalyzer:
     def get_spending_velocity(self, user_id: str) -> Dict:
         """Calculate spending velocity (avg spending per day)"""
         try:
-            ref = self.firebase_service.db.reference(f'users/{user_id}/expenses')
-            all_expenses = ref.get()
+            all_expenses = self.firebase_service.get_user_expenses(user_id)
 
             if not all_expenses:
                 return {'error': 'No expenses found'}

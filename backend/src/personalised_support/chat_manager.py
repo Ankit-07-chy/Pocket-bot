@@ -113,42 +113,21 @@ class ChatManager:
     @staticmethod
     def _load_expense_context(user_id: str) -> Optional[Dict[str, Any]]:
         """
-        Pull current-month, previous-month and budget data from Firebase and
+        Pull current-month, previous-month and budget data from SQLite and
         return a flat dict ready for the system prompt.
         """
         try:
-            import firebase_admin
-            from firebase_admin import db as firebase_db
+            # Import the SQLite service — works regardless of how the package
+            # was loaded (relative or absolute import path).
+            try:
+                from expense_management.sqlite_service import SQLiteExpenseService
+            except ImportError:
+                from backend.src.expense_management.sqlite_service import SQLiteExpenseService
 
-            if not firebase_admin._apps:
-                return None
-
-            # Budget plan
-            budget_ref = firebase_db.reference(f"users/{user_id}/budget_plan")
-            budget_data = budget_ref.get()
-
-            # Current month expenses
-            from datetime import datetime
-            today = datetime.now()
-            first_day = today.replace(day=1)
-
-            expenses_ref = firebase_db.reference(f"users/{user_id}/expenses")
-            all_expenses = expenses_ref.get() or {}
-
-            current_expenses = {
-                k: v for k, v in all_expenses.items()
-                if _parse_date(v.get("date", "")) >= first_day
-            }
-
-            # Previous month
-            from datetime import timedelta
-            last_day_prev = first_day - timedelta(days=1)
-            first_day_prev = last_day_prev.replace(day=1)
-
-            prev_expenses = {
-                k: v for k, v in all_expenses.items()
-                if first_day_prev <= _parse_date(v.get("date", "")) <= last_day_prev
-            }
+            svc = SQLiteExpenseService()
+            current_expenses = svc.get_current_month_expenses(user_id)
+            prev_expenses = svc.get_previous_month_expenses(user_id)
+            budget_data = svc.get_budget_plan(user_id)
 
             current_total = sum(
                 float(v.get("amount", 0)) for v in current_expenses.values()

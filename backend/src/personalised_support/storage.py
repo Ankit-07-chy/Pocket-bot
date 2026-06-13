@@ -1,22 +1,55 @@
 """
-Storage layer for conversations and peer support data
+Storage layer for conversations and peer support data.
+
+ConversationStorage now persists messages to the SQLite chat_history table
+so history survives server restarts. All other storage classes remain
+in-memory (peer/analytics are session-scoped by design).
 """
 
 import json
 import logging
+import sqlite3
+import os
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
+def _get_db_path() -> str:
+    here = Path(__file__).resolve()
+    for _ in range(6):
+        candidate = here / "database" / "pocketbuddy.db"
+        if candidate.exists():
+            return str(candidate)
+        here = here.parent
+    return os.getenv(
+        "SQLITE_DB_PATH",
+        str(Path(__file__).resolve().parents[4] / "database" / "pocketbuddy.db")
+    )
+
+
+def _db():
+    conn = sqlite3.connect(_get_db_path())
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
 class ConversationStorage:
-    """Store and retrieve conversation data"""
+    """
+    Persist conversation messages to the SQLite chat_history table.
+    Falls back to in-memory storage if the DB is unavailable.
+    """
 
     def __init__(self):
-        """Initialize storage (in-memory for now, can be replaced with DB)"""
-        self.conversations: Dict[str, List[Dict]] = {}
-        self.metadata: Dict[str, Dict] = {}
+        # In-memory fallback / metadata store
+        self._meta: Dict[str, Dict] = {}
+
+    # ------------------------------------------------------------------
+    # Messages
+    # ------------------------------------------------------------------
 
     def save_message(
         self,
@@ -25,54 +58,96 @@ class ConversationStorage:
         content: str,
         message_type: str
     ) -> None:
-        """Save a message to conversation history"""
-        if user_id not in self.conversations:
-            self.conversations[user_id] = []
-
-        message = {
-            "role": role,
-            "content": content,
-            "message_type": message_type,
-            "timestamp": datetime.now().isoformat()
-        }
-
-        self.conversations[user_id].append(message)
-        logger.info(f"Saved message for user {user_id}")
+        """Persist one chat turn to chat_history. User turn and assistant
+        turn are each stored as separate rows."""
+        try:
+            with _db() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO chat_history
+                        (user_id, date, user_message, ai_response, context)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        int(user_id) if str(user_id).isdigit() else 0,
+                        datetime.now().strftime("%Y-%m-%d"),
+                        content if role == "user"      else "",
+                        content if role == "assistant" else "",
+                        json.dumps({"role": role, "message_type": message_type}),
+                    )
+                )
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"chat_history DB write failed (non-fatal): {e}")
 
     def get_conversation(
         self,
         user_id: str,
         limit: Optional[int] = None
     ) -> List[Dict]:
-        """Retrieve conversation history"""
-        messages = self.conversations.get(user_id, [])
+        """Retrieve conversation history from DB (newest-last order)."""
+        try:
+            uid = int(user_id) if str(user_id).isdigit() else 0
+            query = (
+                "SELECT user_message, ai_response, context, created_at"
+                " FROM chat_history WHERE user_id=?"
+                " ORDER BY created_at ASC"
+            )
+            params: tuple = (uid,)
+            if limit:
+                query = (
+                    "SELECT user_message, ai_response, context, created_at"
+                    " FROM (SELECT * FROM chat_history WHERE user_id=?"
+                    "        ORDER BY created_at DESC LIMIT ?)"
+                    " ORDER BY created_at ASC"
+                )
+                params = (uid, limit)
 
-        if limit:
-            messages = messages[-limit:]
+            with _db() as conn:
+                rows = conn.execute(query, params).fetchall()
 
-        return messages
+            messages = []
+            for row in rows:
+                ctx = json.loads(row["context"] or "{}")
+                role = ctx.get("role", "user")
+                content = row["user_message"] if role == "user" else row["ai_response"]
+                if content:
+                    messages.append({
+                        "role": role,
+                        "content": content,
+                        "message_type": ctx.get("message_type", role),
+                        "timestamp": row["created_at"],
+                    })
+            return messages
+        except Exception as e:
+            logger.warning(f"chat_history DB read failed: {e}")
+            return []
 
     def clear_conversation(self, user_id: str) -> None:
-        """Clear conversation history"""
-        if user_id in self.conversations:
-            del self.conversations[user_id]
-        if user_id in self.metadata:
-            del self.metadata[user_id]
-        logger.info(f"Cleared conversation for user {user_id}")
+        """Delete all chat history for a user from the DB."""
+        try:
+            uid = int(user_id) if str(user_id).isdigit() else 0
+            with _db() as conn:
+                conn.execute("DELETE FROM chat_history WHERE user_id=?", (uid,))
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"chat_history DB clear failed: {e}")
+        self._meta.pop(user_id, None)
+
+    # ------------------------------------------------------------------
+    # Metadata (kept in-memory — lightweight)
+    # ------------------------------------------------------------------
 
     def save_metadata(self, user_id: str, metadata: Dict[str, Any]) -> None:
-        """Save user metadata"""
-        if user_id not in self.metadata:
-            self.metadata[user_id] = {}
-
-        self.metadata[user_id].update({
+        if user_id not in self._meta:
+            self._meta[user_id] = {}
+        self._meta[user_id].update({
             **metadata,
             "updated_at": datetime.now().isoformat()
         })
 
     def get_metadata(self, user_id: str) -> Optional[Dict]:
-        """Get user metadata"""
-        return self.metadata.get(user_id)
+        return self._meta.get(user_id)
 
 
 class PeerSupportStorage:

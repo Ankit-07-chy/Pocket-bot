@@ -18,8 +18,7 @@ class ExpenseForecaster:
     def forecast_next_month(self, user_id: str, confidence: float = 0.85) -> Dict:
         """Forecast next month's expenses"""
         try:
-            ref = self.firebase_service.db.reference(f'users/{user_id}/expenses')
-            all_expenses = ref.get()
+            all_expenses = self.firebase_service.get_user_expenses(user_id)
 
             if not all_expenses:
                 return {'error': 'No historical data'}
@@ -52,8 +51,7 @@ class ExpenseForecaster:
     def forecast_category(self, user_id: str, category: str, months_ahead: int = 1) -> Dict:
         """Forecast expenses for a specific category"""
         try:
-            ref = self.firebase_service.db.reference(f'users/{user_id}/expenses')
-            all_expenses = ref.get()
+            all_expenses = self.firebase_service.get_user_expenses(user_id)
 
             if not all_expenses:
                 return {'error': 'No historical data'}
@@ -81,8 +79,7 @@ class ExpenseForecaster:
     def detect_anomalies(self, user_id: str) -> Dict:
         """Detect unusual spending patterns"""
         try:
-            ref = self.firebase_service.db.reference(f'users/{user_id}/expenses')
-            all_expenses = ref.get()
+            all_expenses = self.firebase_service.get_user_expenses(user_id)
 
             if not all_expenses:
                 return {'anomalies': []}
@@ -139,8 +136,7 @@ class ExpenseForecaster:
     def get_seasonal_forecast(self, user_id: str) -> Dict:
         """Get seasonal spending patterns and forecasts"""
         try:
-            ref = self.firebase_service.db.reference(f'users/{user_id}/expenses')
-            all_expenses = ref.get()
+            all_expenses = self.firebase_service.get_user_expenses(user_id)
 
             if not all_expenses:
                 return {'error': 'No historical data'}
