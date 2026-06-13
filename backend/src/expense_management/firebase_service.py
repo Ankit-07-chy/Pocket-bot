@@ -1,16 +1,22 @@
 import firebase_admin # used for initializing Firebase app
-from firebase_admin import db, credentials # used for database operations and credentials management
+from firebase_admin import db # used for database operations
 from datetime import datetime, timedelta # used for date calculations
 from typing import Dict, List, Optional # used for type hinting
 
 
 class FirebaseExpenseService:
     def __init__(self):
-        self.db = db
+        try:
+            self.db = db
+        except Exception as e:
+            print(f"Warning: Firebase not properly initialized: {e}")
+            self.db = None
 
     def get_user_expenses(self, user_id: str) -> Dict:
         """Fetch all expenses for a user from Firebase"""
         try:
+            if not self.db:
+                return {}
             ref = self.db.reference(f'users/{user_id}/expenses')
             expenses = ref.get()
             return expenses if expenses else {}
@@ -21,6 +27,8 @@ class FirebaseExpenseService:
     def get_previous_month_expenses(self, user_id: str) -> Dict:
         """Fetch previous month expenses for a user"""
         try:
+            if not self.db:
+                return {}
             today = datetime.now()
             first_day_current = today.replace(day=1)
             last_day_previous = first_day_current - timedelta(days=1)
@@ -46,6 +54,8 @@ class FirebaseExpenseService:
     def get_current_month_expenses(self, user_id: str) -> Dict:
         """Fetch current month expenses for a user"""
         try:
+            if not self.db:
+                return {}
             today = datetime.now()
             first_day_current = today.replace(day=1)
 
@@ -69,6 +79,9 @@ class FirebaseExpenseService:
     def save_budget_plan(self, user_id: str, budget_plan: Dict) -> bool:
         """Save the generated budget plan to Firebase"""
         try:
+            if not self.db:
+                print("Firebase not available - budget plan not saved")
+                return False
             ref = self.db.reference(f'users/{user_id}/budget_plan')
             ref.set({
                 'plan': budget_plan,
