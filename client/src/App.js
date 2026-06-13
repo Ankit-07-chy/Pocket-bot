@@ -20,6 +20,8 @@ import Profile from './pages/Profile';
 function App() {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
     useEffect(() => {
         // Listen to Firebase auth state changes
@@ -90,6 +92,11 @@ function App() {
     if (!user) {
         return (
             <BrowserRouter>
+                <div className="bg-blobs">
+                    <div className="blob blob-1"></div>
+                    <div className="blob blob-2"></div>
+                    <div className="blob blob-3"></div>
+                </div>
                 <Routes>
                     <Route path="/register" element={
                         <Register onJWTLogin={handleJWTLogin} onFirebaseLogin={handleFirebaseLogin} />
@@ -105,14 +112,39 @@ function App() {
     // Main app with sidebar navigation
     return (
         <BrowserRouter>
+            <div className="bg-blobs">
+                <div className="blob blob-1"></div>
+                <div className="blob blob-2"></div>
+                <div className="blob blob-3"></div>
+            </div>
             <div className="app-container">
+                {/* Mobile Header */}
+                <header className="mobile-header">
+                    <button className="menu-toggle" onClick={() => setIsMobileMenuOpen(true)} aria-label="Open sidebar">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                    </button>
+                    <div className="mobile-logo">🎒 PocketBuddy</div>
+                    <div className="mobile-user-avatar">
+                        {user?.photoURL ? (
+                            <img src={user.photoURL} alt={user.name} />
+                        ) : (
+                            user?.name?.charAt(0).toUpperCase()
+                        )}
+                    </div>
+                </header>
+
                 {/* Sidebar Navigation */}
-                <aside className="sidebar">
+                <aside className={`sidebar ${isMobileMenuOpen ? 'open' : ''}`}>
                     <div className="sidebar-header">
-                        <h1>🎒 PocketBuddy</h1>
+                        <div className="header-top">
+                            <h1>🎒 PocketBuddy</h1>
+                            <button className="sidebar-close" onClick={() => setIsMobileMenuOpen(false)} aria-label="Close sidebar">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                        </div>
                         <p>Hey, {user?.name?.split(' ')[0]}!</p>
                     </div>
-                    <nav>
+                    <nav onClick={() => setIsMobileMenuOpen(false)}>
                         <NavLink to="/" end>📊 <span>Dashboard</span></NavLink>
                         <NavLink to="/expenses">💰 <span>Expenses</span></NavLink>
                         <NavLink to="/food">🍕 <span>Food</span></NavLink>
@@ -121,11 +153,16 @@ function App() {
                         <NavLink to="/routine">🏃 <span>Routine</span></NavLink>
                         <NavLink to="/chat">💬 <span>AI Chat</span></NavLink>
                         <NavLink to="/profile">⚙️ <span>Profile</span></NavLink>
-                        <a href="#logout" onClick={(e) => { e.preventDefault(); handleLogout(); }}>
+                        <a href="#logout" onClick={(e) => { e.preventDefault(); setShowLogoutConfirm(true); }}>
                             🚪 <span>Logout</span>
                         </a>
                     </nav>
                 </aside>
+
+                {/* Mobile Sidebar Overlay */}
+                {isMobileMenuOpen && (
+                    <div className="sidebar-overlay" onClick={() => setIsMobileMenuOpen(false)}></div>
+                )}
 
                 {/* Main Content Area */}
                 <main className="main-content">
@@ -141,6 +178,50 @@ function App() {
                         <Route path="*" element={<Navigate to="/" />} />
                     </Routes>
                 </main>
+            {/* Logout Confirmation Modal Overlay */}
+            {showLogoutConfirm && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    width: '100vw',
+                    height: '100vh',
+                    background: 'rgba(15, 23, 42, 0.45)',
+                    backdropFilter: 'blur(8px)',
+                    WebkitBackdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 2000
+                }}>
+                    <div className="card" style={{
+                        maxWidth: '360px',
+                        width: '90%',
+                        padding: '32px 24px 24px',
+                        textAlign: 'center',
+                        border: '1px solid rgba(255, 255, 255, 0.6)',
+                        boxShadow: 'var(--shadow-md)',
+                        margin: 0
+                    }}>
+                        <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>🚪</div>
+                        <h2 style={{ marginBottom: '8px', fontSize: '1.3rem', fontWeight: 800 }}>Confirm Logout</h2>
+                        <p style={{ color: 'var(--text-light)', marginBottom: '24px', fontSize: '0.9rem', lineHeight: '1.5' }}>
+                            Are you sure you want to log out of PocketBuddy?
+                        </p>
+                        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                            <button className="btn btn-secondary btn-small" onClick={() => setShowLogoutConfirm(false)}>
+                                Cancel
+                            </button>
+                            <button className="btn btn-danger btn-small" onClick={() => {
+                                handleLogout();
+                                setShowLogoutConfirm(false);
+                            }}>
+                                Log Out
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             </div>
         </BrowserRouter>
     );
