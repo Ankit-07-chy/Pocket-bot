@@ -17,21 +17,3 @@ __pycache__/
 
 # env keys 
 .env
-
-# Python ML — per-user trained models and runtime state (generated at runtime, not source)
-backend/src/burnout_prediction/models/
-*.pkl
-
-# Test and demo artifacts (development only, not production code)
-test_*.py
-run_scenarios.py
-
-# Excel outputs (generated reports, not source)
-*.xlsx
-*.xls
-~$*.xlsx
-~$*.xls
-
-# Python cache
-*.pyo
-*.pyd
