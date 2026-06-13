@@ -60,7 +60,7 @@ function FoodPage() {
                         <div className="form-row">
                             <div className="form-group">
                                 <label htmlFor="food-name">What did you eat?</label>
-                                <input id="food-name" value={form.food_name}
+                                <input id="food-name" type="text" value={form.food_name}
                                     onChange={(e) => setForm({ ...form, food_name: e.target.value })}
                                     placeholder="e.g. Rice and beans" required />
                             </div>

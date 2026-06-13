@@ -100,7 +100,7 @@ function Register({ onJWTLogin, onFirebaseLogin }) {
                 <form onSubmit={handleFirebaseRegister}>
                     <div className="form-group">
                         <label htmlFor="name">Full Name</label>
-                        <input id="name" name="name" value={form.name} onChange={handleChange} placeholder="Your name" required />
+                        <input id="name" name="name" type="text" value={form.name} onChange={handleChange} placeholder="Your name" required />
                     </div>
                     <div className="form-group">
                         <label htmlFor="reg-email">Email</label>
@@ -113,7 +113,7 @@ function Register({ onJWTLogin, onFirebaseLogin }) {
                     <div className="form-row">
                         <div className="form-group">
                             <label htmlFor="major">Major</label>
-                            <input id="major" name="major" value={form.major} onChange={handleChange} placeholder="e.g. Computer Science" />
+                            <input id="major" name="major" type="text" value={form.major} onChange={handleChange} placeholder="e.g. Computer Science" />
                         </div>
                         <div className="form-group">
                             <label htmlFor="year">Year</label>

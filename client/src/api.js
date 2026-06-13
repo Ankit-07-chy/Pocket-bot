@@ -100,5 +100,7 @@ export const support = {
     chatHistory: (limit = 20) => apiCall(`/chat/chat/history?limit=${limit}`),
     suggestions: () => apiCall('/support/suggestions'),
     emergency: () => apiCall('/support/emergency'),
-    feedback: (body) => apiCall('/support/feedback', { method: 'POST', body })
+    feedback: (body) => apiCall('/support/feedback', { method: 'POST', body }),
+    getAIRecommendation: () => apiCall('/support/recommendation'),
+    getPurchaseAdvice: (body) => apiCall('/support/purchase-advice', { method: 'POST', body })
 };

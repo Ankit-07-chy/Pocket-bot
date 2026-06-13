@@ -1,17 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { burnout } from '../api';
+import { motion, AnimatePresence } from 'framer-motion';
+import confetti from 'canvas-confetti';
+
+const cardVariants = {
+    enter: { scale: 0.95, y: 30, opacity: 0 },
+    center: { scale: 1, y: 0, opacity: 1, transition: { duration: 0.3 } },
+    exit: { y: -300, opacity: 0, transition: { duration: 0.3 } }
+};
 
 function BurnoutPage() {
     const [score, setScore] = useState(null);
     const [alertData, setAlertData] = useState(null);
     const [form, setForm] = useState({
-        sleep_hours: '', stress_level: 5, mood: 'neutral',
-        study_hours: '', exercise_minutes: '', energy_level: 5, notes: ''
+        sleep_hours: 7,
+        stress_level: 5,
+        mood: 'neutral',
+        study_hours: 4,
+        exercise_minutes: 30,
+        energy_level: 5,
+        notes: ''
     });
+    const [currentCard, setCurrentCard] = useState(0); // 0 = sleep, 1 = stress, 2 = mood/habits
     const [success, setSuccess] = useState('');
     const [tab, setTab] = useState('checkin');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    useEffect(() => { loadData(); }, []);
+    useEffect(() => {
+        loadData();
+    }, []);
 
     async function loadData() {
         try {
@@ -26,8 +43,29 @@ function BurnoutPage() {
         }
     }
 
-    async function handleCheckin(e) {
-        e.preventDefault();
+    const triggerConfetti = () => {
+        const duration = 2 * 1000;
+        const animationEnd = Date.now() + duration;
+        const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999 };
+
+        const randomInRange = (min, max) => Math.random() * (max - min) + min;
+
+        const interval = setInterval(function() {
+            const timeLeft = animationEnd - Date.now();
+
+            if (timeLeft <= 0) {
+                return clearInterval(interval);
+            }
+
+            const particleCount = 50 * (timeLeft / duration);
+            confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
+            confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
+        }, 250);
+    };
+
+    async function submitCheckin() {
+        if (isSubmitting) return;
+        setIsSubmitting(true);
         setSuccess('');
         try {
             const result = await burnout.checkin({
@@ -39,90 +77,315 @@ function BurnoutPage() {
                 energy_level: parseInt(form.energy_level),
                 notes: form.notes
             });
-            setSuccess('Check-in recorded! ' + (result.burnout?.interpretation || ''));
-            loadData();
+            
+            triggerConfetti();
+            setSuccess('Check-in recorded successfully!');
+            setTimeout(() => {
+                setTab('status');
+                loadData();
+                setCurrentCard(0); // Reset for next check-in
+                setIsSubmitting(false);
+                setSuccess('');
+            }, 1500);
         } catch (err) {
-            console.error(err);
+            console.error('Check-in failed:', err);
+            setIsSubmitting(false);
         }
     }
 
+    const nextCard = () => {
+        if (currentCard < 2) {
+            setCurrentCard(currentCard + 1);
+        } else {
+            submitCheckin();
+        }
+    };
+
+    const prevCard = () => {
+        if (currentCard > 0) {
+            setCurrentCard(currentCard - 1);
+        }
+    };
+
+    const handleDragEnd = (event, info) => {
+        if (info.offset.y < -100) {
+            nextCard();
+        }
+    };
+
     return (
         <div>
-            <h1 style={{ marginBottom: '24px' }}>🧠 Burnout Detection</h1>
+            <h1 style={{ marginBottom: '24px' }}>🧠 Burnout & Wellness Check-in</h1>
 
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
                 <button className={`btn ${tab === 'checkin' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('checkin')}>Daily Check-in</button>
-                <button className={`btn ${tab === 'status' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('status')}>Status</button>
+                <button className={`btn ${tab === 'status' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('status')}>Wellness Status</button>
             </div>
 
             {/* Daily Check-in */}
             {tab === 'checkin' && (
-                <div className="card">
-                    <div className="card-header"><h2>How are you today?</h2></div>
-                    {success && <div className="alert alert-success">{success}</div>}
+                <div style={{ position: 'relative', width: '100%', maxWidth: '480px', margin: '0 auto', height: '480px' }}>
+                    {success && <div className="alert alert-success" style={{ marginBottom: '16px', textAlign: 'center' }}>{success}</div>}
 
-                    <form onSubmit={handleCheckin}>
-                        <div className="form-row">
-                            <div className="form-group">
-                                <label htmlFor="sleep">Hours of sleep last night</label>
-                                <input id="sleep" type="number" step="0.5" min="0" max="24" value={form.sleep_hours}
-                                    onChange={(e) => setForm({ ...form, sleep_hours: e.target.value })}
-                                    placeholder="7" required />
-                            </div>
-                            <div className="form-group">
-                                <label htmlFor="stress">Stress level (1 = calm, 10 = extremely stressed)</label>
-                                <input id="stress" type="range" min="1" max="10" value={form.stress_level}
-                                    onChange={(e) => setForm({ ...form, stress_level: e.target.value })} />
-                                <span style={{ fontSize: '0.85rem', color: 'var(--text-light)' }}>
-                                    {form.stress_level}/10 {form.stress_level >= 8 ? '😰' : form.stress_level >= 5 ? '😐' : '😊'}
-                                </span>
-                            </div>
-                        </div>
+                    <AnimatePresence mode="wait">
+                        {currentCard === 0 && (
+                            <motion.div
+                                key="card-sleep"
+                                className="card"
+                                drag="y"
+                                dragConstraints={{ top: 0, bottom: 0 }}
+                                dragElastic={{ top: 0.6, bottom: 0.1 }}
+                                onDragEnd={handleDragEnd}
+                                variants={cardVariants}
+                                initial="enter"
+                                animate="center"
+                                exit="exit"
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    cursor: 'grab',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    justifyContent: 'space-between',
+                                    border: '1px solid rgba(255,255,255,0.6)',
+                                    boxShadow: 'var(--shadow-md)',
+                                    zIndex: 10
+                                }}
+                            >
+                                <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                        <span style={{ fontSize: '0.85rem', color: 'var(--text-light)', fontWeight: 600 }}>STEP 1 OF 3</span>
+                                        <span style={{ fontSize: '1.5rem' }}>😴</span>
+                                    </div>
+                                    <h2 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '8px' }}>Sleep Quality</h2>
+                                    <p style={{ color: 'var(--text-light)', fontSize: '0.9rem', marginBottom: '24px' }}>
+                                        How many hours of restful sleep did you get last night?
+                                    </p>
 
-                        <div className="form-group">
-                            <label htmlFor="mood">How's your mood?</label>
-                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                                {['happy', 'neutral', 'anxious', 'sad', 'overwhelmed'].map(m => (
-                                    <button key={m} type="button"
-                                        className={`btn ${form.mood === m ? 'btn-primary' : 'btn-secondary'} btn-small`}
-                                        onClick={() => setForm({ ...form, mood: m })}>
-                                        {m === 'happy' ? '😊' : m === 'neutral' ? '😐' : m === 'anxious' ? '😟' : m === 'sad' ? '😢' : '😩'} {m}
+                                    <div style={{ textAlign: 'center', margin: '24px 0' }}>
+                                        <div style={{ fontSize: '3.5rem', fontWeight: 800, color: 'var(--primary)' }}>
+                                            {form.sleep_hours} hrs
+                                        </div>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <input
+                                            type="range"
+                                            min="3"
+                                            max="12"
+                                            step="0.5"
+                                            value={form.sleep_hours}
+                                            onChange={(e) => setForm({ ...form, sleep_hours: parseFloat(e.target.value) })}
+                                            style={{ width: '100%', cursor: 'pointer' }}
+                                        />
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-light)', marginTop: '6px' }}>
+                                            <span>3 hrs</span>
+                                            <span>7-8 hrs (Target)</span>
+                                            <span>12 hrs</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-light)' }}>Swipe up or click Next to advance</span>
+                                    <button className="btn btn-primary" style={{ width: '100%' }} onClick={nextCard}>
+                                        Next step →
                                     </button>
-                                ))}
-                            </div>
-                        </div>
+                                </div>
+                            </motion.div>
+                        )}
 
-                        <div className="form-row">
-                            <div className="form-group">
-                                <label htmlFor="study">Study hours today</label>
-                                <input id="study" type="number" step="0.5" min="0" max="24" value={form.study_hours}
-                                    onChange={(e) => setForm({ ...form, study_hours: e.target.value })}
-                                    placeholder="4" />
-                            </div>
-                            <div className="form-group">
-                                <label htmlFor="exercise">Exercise (minutes)</label>
-                                <input id="exercise" type="number" min="0" value={form.exercise_minutes}
-                                    onChange={(e) => setForm({ ...form, exercise_minutes: e.target.value })}
-                                    placeholder="30" />
-                            </div>
-                        </div>
+                        {currentCard === 1 && (
+                            <motion.div
+                                key="card-stress"
+                                className="card"
+                                drag="y"
+                                dragConstraints={{ top: 0, bottom: 0 }}
+                                dragElastic={{ top: 0.6, bottom: 0.1 }}
+                                onDragEnd={handleDragEnd}
+                                variants={cardVariants}
+                                initial="enter"
+                                animate="center"
+                                exit="exit"
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    cursor: 'grab',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    justifyContent: 'space-between',
+                                    border: '1px solid rgba(255,255,255,0.6)',
+                                    boxShadow: 'var(--shadow-md)',
+                                    zIndex: 10
+                                }}
+                            >
+                                <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                        <span style={{ fontSize: '0.85rem', color: 'var(--text-light)', fontWeight: 600 }}>STEP 2 OF 3</span>
+                                        <span style={{ fontSize: '1.5rem' }}>⚡</span>
+                                    </div>
+                                    <h2 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '8px' }}>Stress Level</h2>
+                                    <p style={{ color: 'var(--text-light)', fontSize: '0.9rem', marginBottom: '24px' }}>
+                                        Rate your current academic stress/anxiety level today.
+                                    </p>
 
-                        <div className="form-group">
-                            <label htmlFor="energy">Energy level (1-10)</label>
-                            <input id="energy" type="range" min="1" max="10" value={form.energy_level}
-                                onChange={(e) => setForm({ ...form, energy_level: e.target.value })} />
-                            <span style={{ fontSize: '0.85rem', color: 'var(--text-light)' }}>{form.energy_level}/10</span>
-                        </div>
+                                    <div style={{ textAlign: 'center', margin: '24px 0' }}>
+                                        <div style={{ fontSize: '3.5rem', fontWeight: 800, color: form.stress_level >= 8 ? 'var(--danger)' : form.stress_level >= 5 ? 'var(--warning)' : 'var(--success)' }}>
+                                            {form.stress_level}/10
+                                        </div>
+                                    </div>
 
-                        <div className="form-group">
-                            <label htmlFor="notes">Notes (optional)</label>
-                            <textarea id="notes" rows="2" value={form.notes}
-                                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                                placeholder="Anything else on your mind?" />
-                        </div>
+                                    <div className="form-group">
+                                        <input
+                                            type="range"
+                                            min="1"
+                                            max="10"
+                                            step="1"
+                                            value={form.stress_level}
+                                            onChange={(e) => setForm({ ...form, stress_level: parseInt(e.target.value) })}
+                                            style={{ width: '100%', cursor: 'pointer' }}
+                                        />
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-light)', marginTop: '6px' }}>
+                                            <span>Calm 😊</span>
+                                            <span>Moderate 😐</span>
+                                            <span>Extreme 😰</span>
+                                        </div>
+                                    </div>
+                                </div>
 
-                        <button type="submit" className="btn btn-primary">Submit Check-in</button>
-                    </form>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                                    <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+                                        <button className="btn btn-secondary" style={{ flex: 1 }} onClick={prevCard}>
+                                            ← Back
+                                        </button>
+                                        <button className="btn btn-primary" style={{ flex: 2 }} onClick={nextCard}>
+                                            Next step →
+                                        </button>
+                                    </div>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-light)', textAlign: 'center', marginTop: '4px' }}>Swipe up to advance</span>
+                                </div>
+                            </motion.div>
+                        )}
+
+                        {currentCard === 2 && (
+                            <motion.div
+                                key="card-mood"
+                                className="card"
+                                drag="y"
+                                dragConstraints={{ top: 0, bottom: 0 }}
+                                dragElastic={{ top: 0.6, bottom: 0.1 }}
+                                onDragEnd={handleDragEnd}
+                                variants={cardVariants}
+                                initial="enter"
+                                animate="center"
+                                exit="exit"
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    cursor: 'grab',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    justifyContent: 'space-between',
+                                    border: '1px solid rgba(255,255,255,0.6)',
+                                    boxShadow: 'var(--shadow-md)',
+                                    overflowY: 'auto',
+                                    zIndex: 10
+                                }}
+                            >
+                                <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                        <span style={{ fontSize: '0.85rem', color: 'var(--text-light)', fontWeight: 600 }}>STEP 3 OF 3</span>
+                                        <span style={{ fontSize: '1.5rem' }}>🎭</span>
+                                    </div>
+                                    <h2 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '8px' }}>Mood & Habits</h2>
+                                    <p style={{ color: 'var(--text-light)', fontSize: '0.9rem', marginBottom: '16px' }}>
+                                        How are you feeling mentally right now?
+                                    </p>
+
+                                    {/* Mood Buttons */}
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                                        {[
+                                            { m: 'happy', label: '😊 Happy' },
+                                            { m: 'neutral', label: '😐 Neutral' },
+                                            { m: 'sad', label: '😢 Sad' },
+                                            { m: 'anxious', label: '😟 Anxious' },
+                                            { m: 'overwhelmed', label: '😫 Stressed' }
+                                        ].map(item => (
+                                            <button
+                                                key={item.m}
+                                                type="button"
+                                                className={`btn ${form.mood === item.m ? 'btn-primary' : 'btn-secondary'} btn-small`}
+                                                onClick={() => setForm({ ...form, mood: item.m })}
+                                                style={{ fontSize: '0.85rem', padding: '6px 12px' }}
+                                            >
+                                                {item.label}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Extra Details */}
+                                    <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+                                        <div className="form-group" style={{ flex: 1 }}>
+                                            <label htmlFor="study" style={{ fontSize: '0.8rem' }}>Study Hours</label>
+                                            <input
+                                                id="study"
+                                                type="number"
+                                                step="0.5"
+                                                min="0"
+                                                value={form.study_hours}
+                                                onChange={(e) => setForm({ ...form, study_hours: e.target.value })}
+                                                style={{ padding: '8px', fontSize: '0.85rem' }}
+                                            />
+                                        </div>
+                                        <div className="form-group" style={{ flex: 1 }}>
+                                            <label htmlFor="exercise" style={{ fontSize: '0.8rem' }}>Exercise (min)</label>
+                                            <input
+                                                id="exercise"
+                                                type="number"
+                                                min="0"
+                                                value={form.exercise_minutes}
+                                                onChange={(e) => setForm({ ...form, exercise_minutes: e.target.value })}
+                                                style={{ padding: '8px', fontSize: '0.85rem' }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="form-group" style={{ marginBottom: '16px' }}>
+                                        <label htmlFor="notes" style={{ fontSize: '0.8rem' }}>Notes (optional)</label>
+                                        <textarea
+                                            id="notes"
+                                            rows="2"
+                                            placeholder="Write down any thoughts..."
+                                            value={form.notes}
+                                            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                                            style={{ padding: '8px', fontSize: '0.85rem', width: '100%', resize: 'none' }}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                                    <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+                                        <button className="btn btn-secondary" style={{ flex: 1 }} onClick={prevCard}>
+                                            ← Back
+                                        </button>
+                                        <button className="btn btn-primary" style={{ flex: 2 }} onClick={submitCheckin} disabled={isSubmitting}>
+                                            {isSubmitting ? 'Recording...' : 'Submit Check-in ✓'}
+                                        </button>
+                                    </div>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-light)', textAlign: 'center', marginTop: '4px' }}>Swipe up to submit check-in</span>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
             )}
 

@@ -90,7 +90,7 @@ function Expenses() {
                     <div className="form-row">
                         <div className="form-group">
                             <label htmlFor="description">Description</label>
-                            <input id="description" value={form.description}
+                            <input id="description" type="text" value={form.description}
                                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                                 placeholder="Coffee at campus cafe" />
                         </div>
