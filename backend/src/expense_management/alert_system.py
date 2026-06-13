@@ -150,32 +150,26 @@ class AlertSystem:
         return remaining
 
     def save_alerts(self, user_id: str, alerts: List[Alert]) -> bool:
-        """Save alerts to Firebase"""
+        """Save alerts to SQLite via the expense service."""
         try:
-            ref = self.firebase_service.db.reference(f'users/{user_id}/alerts')
             alert_data = {alert.alert_id: alert.to_dict() for alert in alerts}
-            ref.set(alert_data)
-            return True
+            return self.firebase_service.save_alerts(user_id, alert_data)
         except Exception as e:
             print(f"Error saving alerts: {e}")
             return False
 
     def get_user_alerts(self, user_id: str) -> List[Dict]:
-        """Retrieve user's active alerts"""
+        """Retrieve user's active alerts from SQLite."""
         try:
-            ref = self.firebase_service.db.reference(f'users/{user_id}/alerts')
-            alerts = ref.get()
-            return list(alerts.values()) if alerts else []
+            return self.firebase_service.get_user_alerts(user_id)
         except Exception as e:
             print(f"Error retrieving alerts: {e}")
             return []
 
     def acknowledge_alert(self, user_id: str, alert_id: str) -> bool:
-        """Mark alert as acknowledged"""
+        """Mark alert as acknowledged in SQLite."""
         try:
-            ref = self.firebase_service.db.reference(f'users/{user_id}/alerts/{alert_id}')
-            ref.update({'acknowledged': True})
-            return True
+            return self.firebase_service.acknowledge_alert(user_id, alert_id)
         except Exception as e:
             print(f"Error acknowledging alert: {e}")
             return False

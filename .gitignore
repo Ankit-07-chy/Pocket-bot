@@ -17,3 +17,6 @@ __pycache__/
 
 # env keys 
 .env
+
+*.db-wal
+*.db-shm
