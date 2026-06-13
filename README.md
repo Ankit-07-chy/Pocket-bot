@@ -112,45 +112,96 @@ All protected endpoints require `Authorization: Bearer <token>` header.
 - `POST /api/support/feedback` — Rate advice helpfulness
 
 ## Project Structure
-
 ```
-Pocket-bot/
-├── server/
-│   ├── index.js              # Express server entry point
-│   ├── database/
-│   │   ├── setup.js          # Database schema (9 tables)
-│   │   └── seed.js           # Budget meals seed data (40+ meals)
-│   ├── middleware/
-│   │   └── auth.js           # JWT authentication middleware
-│   └── routes/
-│       ├── auth.js           # Register, login, profile
-│       ├── expenses.js       # Feature 1: Expense tracking
-│       ├── food.js           # Feature 2: Food recommendations
-│       ├── travel.js         # Feature 3: Travel options
-│       ├── burnout.js        # Feature 4: Burnout detection
-│       ├── routine.js        # Feature 5: Healthy routine
-│       └── support.js        # Feature 6: AI support chat
-├── client/
-│   ├── public/index.html
-│   └── src/
-│       ├── index.js          # React entry point
-│       ├── App.js            # Router + sidebar layout
-│       ├── api.js            # API helper functions
-│       ├── styles.css        # Global styles
-│       └── pages/
-│           ├── Login.js
-│           ├── Register.js
-│           ├── Dashboard.js
-│           ├── Expenses.js
-│           ├── FoodPage.js
-│           ├── TravelPage.js
-│           ├── BurnoutPage.js
-│           ├── RoutinePage.js
-│           ├── ChatPage.js
-│           └── Profile.js
-├── .env
-├── .env.example
-└── package.json
+poket-bot
+├─ .python-version
+├─ backend
+│  ├─ app.py
+│  ├─ PROJECT.md
+│  ├─ src
+│  │  ├─ burnout_detection
+│  │  ├─ expense_management
+│  │  │  ├─ alert_system.py
+│  │  │  ├─ budget_planner.py
+│  │  │  ├─ config.py
+│  │  │  ├─ expense_analyzer.py
+│  │  │  ├─ firebase_service.py
+│  │  │  ├─ forecaster.py
+│  │  │  ├─ initialize_boundary.py
+│  │  │  ├─ README.md
+│  │  │  ├─ schemas.py
+│  │  │  ├─ trend_analyzer.py
+│  │  │  └─ __init__.py
+│  │  ├─ food_recommendation
+│  │  ├─ health_routine
+│  │  ├─ main_api.py
+│  │  ├─ personalised_support
+│  │  │  ├─ api_routes.py
+│  │  │  ├─ ARCHITECTURE.md
+│  │  │  ├─ chat_manager.py
+│  │  │  ├─ config.py
+│  │  │  ├─ langchain_chatbot.py
+│  │  │  ├─ llm_provider.py
+│  │  │  ├─ peer_support.py
+│  │  │  ├─ project.md
+│  │  │  ├─ prompts.py
+│  │  │  ├─ README.md
+│  │  │  ├─ rule_based_support.py
+│  │  │  ├─ schemas.py
+│  │  │  ├─ storage.py
+│  │  │  └─ __init__.py
+│  │  ├─ travel_recommendation
+│  │  └─ __init__.py
+│  └─ __init__.py
+├─ client
+│  ├─ package-lock.json
+│  ├─ package.json
+│  ├─ public
+│  │  └─ index.html
+│  └─ src
+│     ├─ api.js
+│     ├─ App.js
+│     ├─ firebase.js
+│     ├─ index.js
+│     ├─ pages
+│     │  ├─ BurnoutPage.js
+│     │  ├─ ChatPage.js
+│     │  ├─ Dashboard.js
+│     │  ├─ Expenses.js
+│     │  ├─ FoodPage.js
+│     │  ├─ Login.js
+│     │  ├─ Profile.js
+│     │  ├─ Register.js
+│     │  ├─ RoutinePage.js
+│     │  └─ TravelPage.js
+│     └─ styles.css
+├─ database
+├─ frontend
+├─ main.py
+├─ package-lock.json
+├─ package.json
+├─ pyproject.toml
+├─ README.md
+├─ server
+│  ├─ database
+│  │  ├─ seed.js
+│  │  └─ setup.js
+│  ├─ firebase
+│  │  ├─ admin.js
+│  │  └─ README.md
+│  ├─ index.js
+│  ├─ middleware
+│  │  └─ auth.js
+│  └─ routes
+│     ├─ auth.js
+│     ├─ burnout.js
+│     ├─ expenses.js
+│     ├─ food.js
+│     ├─ routine.js
+│     ├─ support.js
+│     └─ travel.js
+└─ uv.lock
+
 ```
 
 ## Algorithms
@@ -173,3 +224,4 @@ Gradual 4-week progression toward goals (25% improvement per week)
 ## License
 
 MIT
+
