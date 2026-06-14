@@ -164,7 +164,53 @@ Provide a quick, realistic student-focused financial advice (max 2 sentences) te
     }
 }
 
+async function generateChatResponse(message, context) {
+    if (!genAI) {
+        return null;
+    }
+
+    const prompt = `
+You are PocketBuddy, a compassionate, knowledgeable student wellness and financial AI companion.
+Answer the student's query based on their actual real-time status context.
+
+Student Query: "${message}"
+
+Student Context:
+- Name: ${context.user?.name || 'Student'}
+- Academic Profile: Major: ${context.user?.major || 'N/A'}, Year: ${context.user?.year || '1'}
+- Student Lifestyle: ${context.user?.student_type || 'Hosteller'}
+- Wellness Index: ${context.wellness?.wellness_score || 'N/A'}/100 (Rating: ${context.wellness?.category || 'N/A'})
+- Burnout Score: ${context.burnout?.burnout_score || 'N/A'}/100 (Risk Level: ${context.burnout?.risk_level || 'N/A'})
+- Financial Health Index: ${context.financial_health?.financial_health || 'N/A'}/100
+  - Budget Adherence: ${context.financial_health?.budget_adherence || 'N/A'}/100
+  - Savings Score: ${context.financial_health?.savings_score || 'N/A'}/100
+  - Forecast Score: ${context.financial_health?.forecast_score || 'N/A'}/100
+- Monthly Pocket Money: ₹${context.user?.monthly_income || 0}
+- Current Month Spend: ₹${context.expenses?.current_total || 0}
+- Remaining Budget: ₹${context.expenses?.remaining || 0}
+- Active Alerts: ${JSON.stringify(context.alerts || [])}
+- Forecast: ${JSON.stringify(context.forecast || {})}
+
+Guidelines:
+1. Provide a direct, empathetic, and structured response addressing their question.
+2. Ground your response in their actual numbers (e.g. wellness score, financial health score, remaining budget, alerts).
+3. If they ask "How am I doing?", give a clear summary of their financial health, burnout risk, recent trends, and offer 1-2 actionable suggestions.
+4. Keep the response engaging, friendly, and limit to 3-4 sentences (or short bullet points) so it is clean for a chat interface.
+`;
+
+    try {
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const result = await model.generateContent(prompt);
+        return result.response.text().trim();
+    } catch (err) {
+        console.warn('Gemini chat response failed:', err.message);
+        return null;
+    }
+}
+
 module.exports = {
     generateRecommendation,
-    generatePurchaseAdvice
+    generatePurchaseAdvice,
+    generateChatResponse
 };
+

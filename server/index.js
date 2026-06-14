@@ -37,6 +37,29 @@ app.use('/api/routine', require('./routes/routine')(db, authenticateToken));
 app.use('/api/chat', require('./routes/support')(db, authenticateToken));
 app.use('/api/support', require('./routes/support')(db, authenticateToken));
 
+// ---- Proxy /api/v1 requests to Python FastAPI backend ----
+app.all('/api/v1/*', authenticateToken, async (req, res) => {
+    try {
+        const path = req.originalUrl;
+        const pythonUrl = `http://localhost:8000${path}`;
+        const options = {
+            method: req.method,
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        };
+        if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+            options.body = JSON.stringify(req.body);
+        }
+        const pythonResponse = await fetch(pythonUrl, options);
+        const data = await pythonResponse.json();
+        res.status(pythonResponse.status).json(data);
+    } catch (err) {
+        console.error('Proxy to Python failed:', err.message);
+        res.status(502).json({ error: 'Failed to communicate with Python backend service.' });
+    }
+});
+
 // ---- Static files (production) ----
 if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.join(__dirname, '../client/build')));

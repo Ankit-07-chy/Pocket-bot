@@ -9,7 +9,7 @@ const router = express.Router();
 module.exports = function (db, authenticateToken) {
 
     // POST /api/chat - Send message to AI support
-    router.post('/chat', authenticateToken, (req, res) => {
+    router.post('/chat', authenticateToken, async (req, res) => {
         try {
             const { message } = req.body;
 
@@ -20,8 +20,43 @@ module.exports = function (db, authenticateToken) {
             // Gather all user context for personalized response
             const context = gatherUserContext(db, req.user.id);
 
-            // Generate AI response based on rules + context
-            const aiResponse = generateResponse(message, context);
+            // Enrich with Python Wellness & Burnout dashboard context
+            let pythonDashboard = null;
+            try {
+                const dashboardRes = await fetch(`http://localhost:8000/api/v1/dashboard/${req.user.id}`);
+                if (dashboardRes.ok) {
+                    pythonDashboard = await dashboardRes.json();
+                }
+            } catch (err) {
+                console.warn('Failed to load Python dashboard context for chat:', err.message);
+            }
+
+            if (pythonDashboard) {
+                context.wellness = {
+                    wellness_score: pythonDashboard.wellness_score,
+                    category: pythonDashboard.wellness_category
+                };
+                context.burnout = {
+                    burnout_score: pythonDashboard.burnout_score,
+                    risk_level: pythonDashboard.burnout_risk
+                };
+                context.financial_health = {
+                    financial_health: pythonDashboard.financial_health,
+                    budget_adherence: pythonDashboard.financial_health_details?.budget_adherence,
+                    savings_score: pythonDashboard.financial_health_details?.savings_score,
+                    forecast_score: pythonDashboard.financial_health_details?.forecast_score
+                };
+                context.expenses.current_total = pythonDashboard.current_month_summary?.total_spent_so_far;
+                context.expenses.remaining = pythonDashboard.remaining_budget?.total_remaining;
+                context.alerts = pythonDashboard.alerts;
+                context.forecast = pythonDashboard.forecast;
+            }
+
+            // Generate AI response with Gemini, fall back to rules
+            let aiResponse = await generateChatResponse(message, context);
+            if (!aiResponse) {
+                aiResponse = generateResponse(message, context);
+            }
 
             // Save to chat history
             const date = new Date().toISOString().split('T')[0];
@@ -37,6 +72,43 @@ module.exports = function (db, authenticateToken) {
         } catch (err) {
             console.error('Chat error:', err);
             res.status(500).json({ error: 'Failed to process message.' });
+        }
+    });
+
+    // POST /api/support/peer/connect - Connect with a peer/mentor
+    router.post('/peer/connect', authenticateToken, async (req, res) => {
+        try {
+            const pythonUrl = `http://localhost:8000/api/support/peer/connect`;
+            const options = {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    user_id: String(req.user.id),
+                    issue_category: req.body.issue_category || 'burnout',
+                    description: req.body.description || 'Burnout risk is high. Automated connection request.'
+                })
+            };
+            const response = await fetch(pythonUrl, options);
+            const data = await response.json();
+            res.status(response.status).json(data);
+        } catch (err) {
+            console.error('Peer connect proxy failed:', err.message);
+            res.status(502).json({ error: 'Failed to connect with peer support.' });
+        }
+    });
+
+    // GET /api/support/peer/leaderboard - Reputation leaderboard
+    router.get('/peer/leaderboard', authenticateToken, async (req, res) => {
+        try {
+            const pythonUrl = `http://localhost:8000/api/support/peer/leaderboard`;
+            const response = await fetch(pythonUrl);
+            const data = await response.json();
+            res.status(response.status).json(data);
+        } catch (err) {
+            console.error('Peer leaderboard proxy failed:', err.message);
+            res.status(502).json({ error: 'Failed to fetch leaderboard.' });
         }
     });
 
@@ -120,7 +192,7 @@ module.exports = function (db, authenticateToken) {
         }
     });
 
-    const { generateRecommendation, generatePurchaseAdvice } = require('../gemini');
+    const { generateRecommendation, generatePurchaseAdvice, generateChatResponse } = require('../gemini');
 
     // GET /api/support/recommendation - Generate AI wellness & finance recommendation
     router.get('/recommendation', authenticateToken, async (req, res) => {

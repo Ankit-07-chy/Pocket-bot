@@ -15,10 +15,10 @@ def main():
         # Change to backend directory
         os.chdir(os.path.join(os.path.dirname(__file__), 'backend'))
 
-        # Run FastAPI with uvicorn
+        # Run FastAPI with uvicorn (using main_api with wellness, burnout and support features)
         subprocess.run([
             sys.executable, '-m', 'uvicorn',
-            'app:app',
+            'src.main_api:app',
             '--host', '0.0.0.0',
             '--port', '8000',
             '--reload'

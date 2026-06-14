@@ -12,6 +12,15 @@ from typing import List, Optional
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
+# Reconfigure stdout/stderr to UTF-8 to prevent encoding crashes on Windows console
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding='utf-8')
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # ==================== PRODUCTION-READY PATH HANDLING ====================
@@ -191,6 +200,22 @@ except ImportError as e:
     print(f"[WARN] Personalised Support not available: {e}")
     support_router = None
     chat_manager = None
+
+
+# ==================== WELLNESS & BURNOUT IMPORTS ====================
+wellness_engine = None
+burnout_predictor = None
+
+try:
+    from burnout_prediction.burnout_predictor import BurnoutPredictor
+    from wellness_engine import WellnessEngine
+    from expense_management.sqlite_service import DB_PATH
+
+    wellness_engine = WellnessEngine()
+    burnout_predictor = BurnoutPredictor(DB_PATH)
+    print("[OK] Wellness & Burnout services initialized successfully")
+except Exception as e:
+    print(f"[WARN] Wellness & Burnout services initialization failed: {e}")
 
 # ==================== FIREBASE INITIALIZATION ====================
 import firebase_admin
@@ -759,7 +784,11 @@ async def get_dashboard(user_id: str):
         previous_expenses = firebase_service.get_previous_month_expenses(user_id)
 
         if not budget_plan:
-            raise HTTPException(status_code=404, detail="User not initialized")
+            return {
+                "user_id": user_id,
+                "status": "new_user",
+                "message": "Complete onboarding to generate your financial profile"
+            }
 
         # Get alerts
         category_alerts = alert_system.check_category_overspending(
@@ -783,24 +812,169 @@ async def get_dashboard(user_id: str):
         prev_analysis = analyzer.analyze_previous_month(previous_expenses) if previous_expenses else {}
         curr_analysis = analyzer.analyze_previous_month(current_expenses) if current_expenses else {}
 
+        # Get financial health score
+        fin_health = 80
+        budget_adherence = 100
+        savings_score = 100
+        forecast_score = 100
+        if wellness_engine is not None:
+            fin_data = wellness_engine.calculate_financial_health(user_id)
+            fin_health = fin_data.get("financial_health", 50)
+            budget_adherence = fin_data.get("budget_adherence", 100)
+            savings_score = fin_data.get("savings_score", 100)
+            forecast_score = fin_data.get("forecast_score", 100)
+
+        # Get burnout score and risk level
+        burnout_score = 0
+        burnout_risk = "low"
+        if burnout_predictor is not None:
+            try:
+                user_id_int = int(user_id)
+                pred = burnout_predictor.predict(user_id_int)
+                burnout_score = int(pred.combined_score * 100)
+                risk_map = {
+                    "good": "low",
+                    "moderate": "medium",
+                    "high": "high",
+                    "crisis": "high"
+                }
+                burnout_risk = risk_map.get(pred.alert_level.value, "low")
+            except Exception as e:
+                print(f"Error predicting burnout in dashboard: {e}")
+
+        # Get wellness score
+        wellness_score = 80
+        wellness_category = "Good"
+        if wellness_engine is not None:
+            well_data = wellness_engine.calculate_wellness_score(fin_health, burnout_score)
+            wellness_score = well_data.get("wellness_score", 50)
+            wellness_category = well_data.get("category", "Moderate")
+
+        # Get recommendations
+        recommendations = {
+            "financial": [],
+            "wellness": [],
+            "productivity": []
+        }
+        if wellness_engine is not None:
+            recommendations = wellness_engine.generate_insights(user_id, wellness_score, fin_health, burnout_score)
+
         return {
-            'user_id': user_id,
-            'generated_at': datetime.now().isoformat(),
-            'previous_month_summary': prev_analysis,
-            'current_month_summary': curr_analysis,
-            'budget_plan': budget_plan.get('plan', budget_plan),
-            'alerts': alerts,
-            'alert_count': len(alerts),
-            'remaining_budget': remaining,
-            'trend_analysis': trends.get('analysis', {}) if isinstance(trends, dict) else {},
-            'forecast': forecast if isinstance(forecast, dict) else {},
-            'spending_velocity': velocity if isinstance(velocity, dict) else {}
+            "financial_health": fin_health,
+            "wellness_score": wellness_score,
+            "burnout_risk": burnout_risk,
+            "remaining_budget": remaining,
+            "alerts": alerts,
+            "forecast": forecast if isinstance(forecast, dict) else {},
+            "trend_analysis": trends.get('analysis', {}) if isinstance(trends, dict) else {},
+            "recommendations": recommendations,
+            
+            # backwards-compatible fields
+            "user_id": user_id,
+            "generated_at": datetime.now().isoformat(),
+            "previous_month_summary": prev_analysis,
+            "current_month_summary": curr_analysis,
+            "budget_plan": budget_plan.get('plan', budget_plan),
+            "spending_velocity": velocity if isinstance(velocity, dict) else {},
+            "wellness_category": wellness_category,
+            "burnout_score": burnout_score,
+            "financial_health_details": {
+                "budget_adherence": budget_adherence,
+                "savings_score": savings_score,
+                "forecast_score": forecast_score
+            }
         }
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== WELLNESS & BURNOUT ENDPOINTS ====================
+
+@app.get("/api/v1/burnout/{user_id}")
+async def get_user_burnout(user_id: str):
+    """Retrieve burnout analysis using the ML/Hybrid/Rule-based predictor"""
+    try:
+        if burnout_predictor is None:
+            raise HTTPException(status_code=503, detail="BurnoutPredictor service not available")
+        
+        user_id_int = int(user_id)
+        pred = burnout_predictor.predict(user_id_int)
+        
+        risk_map = {
+            "good": "low",
+            "moderate": "medium",
+            "high": "high",
+            "crisis": "high"
+        }
+        risk_level = risk_map.get(pred.alert_level.value, "low")
+        
+        return {
+            "user_id": user_id,
+            "burnout_score": int(pred.combined_score * 100),
+            "risk_level": risk_level,
+            "financial_stress": int(pred.financial_score * 100),
+            "mental_stress": int(pred.mental_score * 100),
+            "confidence": round(pred.confidence, 2)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/wellness-score/{user_id}")
+async def get_user_wellness_score(user_id: str):
+    """Calculate and return the consolidated student wellness score"""
+    try:
+        if wellness_engine is None or burnout_predictor is None:
+            raise HTTPException(status_code=503, detail="Wellness engine services not available")
+        
+        user_id_int = int(user_id)
+        pred = burnout_predictor.predict(user_id_int)
+        burnout_score = int(pred.combined_score * 100)
+        
+        fin_health = wellness_engine.calculate_financial_health(user_id)
+        fin_score = fin_health["financial_health"]
+        
+        wellness_data = wellness_engine.calculate_wellness_score(fin_score, burnout_score)
+        return wellness_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/financial-health/{user_id}")
+async def get_user_financial_health(user_id: str):
+    """Calculate and return detailed financial health metrics"""
+    try:
+        if wellness_engine is None:
+            raise HTTPException(status_code=503, detail="Wellness engine service not available")
+        
+        fin_health = wellness_engine.calculate_financial_health(user_id)
+        return fin_health
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/recommendations/{user_id}")
+async def get_user_recommendations(user_id: str):
+    """Get categorized recommendations (financial, wellness, productivity)"""
+    try:
+        if wellness_engine is None or burnout_predictor is None:
+            raise HTTPException(status_code=503, detail="Wellness services not available")
+        
+        user_id_int = int(user_id)
+        pred = burnout_predictor.predict(user_id_int)
+        burnout_score = int(pred.combined_score * 100)
+        
+        fin_health = wellness_engine.calculate_financial_health(user_id)
+        fin_score = fin_health["financial_health"]
+        
+        wellness_data = wellness_engine.calculate_wellness_score(fin_score, burnout_score)
+        well_score = wellness_data["wellness_score"]
+        
+        recs = wellness_engine.generate_insights(user_id, well_score, fin_score, burnout_score)
+        return recs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
 # ║                           ERROR HANDLING                                         ║
