@@ -102,5 +102,16 @@ export const support = {
     emergency: () => apiCall('/support/emergency'),
     feedback: (body) => apiCall('/support/feedback', { method: 'POST', body }),
     getAIRecommendation: () => apiCall('/support/recommendation'),
-    getPurchaseAdvice: (body) => apiCall('/support/purchase-advice', { method: 'POST', body })
+    getPurchaseAdvice: (body) => apiCall('/support/purchase-advice', { method: 'POST', body }),
+    peerConnect: (body) => apiCall('/support/peer/connect', { method: 'POST', body })
 };
+
+// ---- Feature 7: v1 Analytics (ML endpoints) ----
+export const v1 = {
+    dashboard: (userId) => apiCall(`/v1/dashboard/${userId}`),
+    burnout: (userId) => apiCall(`/v1/burnout/${userId}`),
+    wellnessScore: (userId) => apiCall(`/v1/wellness-score/${userId}`),
+    financialHealth: (userId) => apiCall(`/v1/financial-health/${userId}`),
+    recommendations: (userId) => apiCall(`/v1/recommendations/${userId}`)
+};
+

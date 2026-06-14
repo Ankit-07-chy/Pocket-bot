@@ -26,6 +26,7 @@ function initializeDatabase(dbPath) {
       password TEXT NOT NULL,
       name TEXT NOT NULL,
       major TEXT DEFAULT '',
+      student_type TEXT DEFAULT '',
       year INTEGER DEFAULT 1,
       monthly_income REAL DEFAULT 0,
       daily_budget REAL DEFAULT 0,
@@ -34,6 +35,13 @@ function initializeDatabase(dbPath) {
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
+
+  // Migrate existing schema if student_type is missing
+  try {
+    db.exec("ALTER TABLE users ADD COLUMN student_type TEXT DEFAULT ''");
+  } catch (e) {
+    // Column already exists, ignore
+  }
 
   // ---- TABLE 2: expenses ----
   // Tracks every spending entry with category

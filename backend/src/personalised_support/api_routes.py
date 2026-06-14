@@ -361,6 +361,8 @@ async def get_system_status():
 async def health_check():
     """Health check for the support system."""
     try:
+        import os
+        groq_key = os.getenv("GROQ_API_KEY")
         return {
             "status": "operational",
             "systems": {
@@ -369,6 +371,12 @@ async def health_check():
                 "peer_support": "operational",
                 "storage": "operational",
             },
+            "debug": {
+                "GROQ_API_KEY_len": len(groq_key) if groq_key else 0,
+                "GROQ_API_KEY_prefix": groq_key[:8] if groq_key else None,
+                "LLM_PROVIDER": os.getenv("LLM_PROVIDER"),
+                "SupportConfig_PROVIDER": chat_manager.ai_chatbot.provider.get_model_info() if chat_manager.ai_chatbot.provider else None
+            }
         }
     except Exception as e:
         logger.error(f"Health check error: {e}")

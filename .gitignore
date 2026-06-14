@@ -31,3 +31,6 @@ sample_queries.sql
 test_data_integrity.py 
 test_endpoints.py 
 verify_db.py 
+
+*.db-wal
+*.db-shm

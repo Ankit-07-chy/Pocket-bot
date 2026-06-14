@@ -14,6 +14,7 @@ Persistence:
   Models are saved per-user as .pkl files using joblib.
   If the models/ directory doesn't exist it is created automatically.
 """
+from __future__ import annotations
 
 import os
 import logging

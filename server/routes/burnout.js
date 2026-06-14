@@ -8,7 +8,7 @@ const router = express.Router();
 module.exports = function (db, authenticateToken) {
 
     // POST /api/health/checkin - Daily wellness check-in
-    router.post('/checkin', authenticateToken, (req, res) => {
+    router.post('/checkin', authenticateToken, async (req, res) => {
         try {
             const { sleep_hours, stress_level, mood, study_hours, exercise_minutes, social_activity, energy_level, notes, date } = req.body;
 
@@ -51,8 +51,32 @@ module.exports = function (db, authenticateToken) {
                 notes || ''
             );
 
-            // Calculate and store burnout score
+            // Calculate and store baseline burnout score
             const burnoutResult = calculateBurnoutScore(db, req.user.id, checkinDate);
+
+            // Try to overwrite with high-fidelity ML burnout prediction
+            try {
+                const pythonRes = await fetch(`http://localhost:8000/api/v1/burnout/${req.user.id}`);
+                if (pythonRes.ok) {
+                    const pythonData = await pythonRes.json();
+                    const mlScore10 = Math.round(pythonData.burnout_score / 10);
+                    let alertVal = "good";
+                    if (pythonData.risk_level === "high") alertVal = "high";
+                    else if (pythonData.risk_level === "medium") alertVal = "moderate";
+                    
+                    db.prepare(`
+                        UPDATE burnout_scores
+                        SET score = ?, alert_level = ?
+                        WHERE user_id = ? AND date = ?
+                    `).run(mlScore10, alertVal, req.user.id, checkinDate);
+
+                    burnoutResult.score = mlScore10;
+                    burnoutResult.alert_level = alertVal;
+                    burnoutResult.interpretation = pythonData.burnout_score >= 55 ? "High burnout risk detected by ML" : "Doing well";
+                }
+            } catch (err) {
+                console.warn('Failed to overwrite with ML burnout score:', err.message);
+            }
 
             res.status(201).json({
                 message: 'Check-in recorded!',
@@ -66,49 +90,63 @@ module.exports = function (db, authenticateToken) {
     });
 
     // GET /api/burnout/score - Get current burnout score
-    router.get('/score', authenticateToken, (req, res) => {
+    router.get('/score', authenticateToken, async (req, res) => {
         try {
-            // Get most recent burnout score
-            const latest = db.prepare(`
-        SELECT * FROM burnout_scores
-        WHERE user_id = ?
-        ORDER BY date DESC LIMIT 1
-      `).get(req.user.id);
-
             // Count total check-in days
             const checkinCount = db.prepare(`
         SELECT COUNT(*) as days FROM health_logs WHERE user_id = ?
       `).get(req.user.id);
 
-            if (!latest) {
+            // Get most recent daily check-in log
+            const latestCheckin = db.prepare(`
+        SELECT * FROM health_logs WHERE user_id = ? ORDER BY date DESC LIMIT 1
+      `).get(req.user.id);
+
+            let pythonBurnout = null;
+            try {
+                const resBurnout = await fetch(`http://localhost:8000/api/v1/burnout/${req.user.id}`);
+                if (resBurnout.ok) {
+                    pythonBurnout = await resBurnout.json();
+                }
+            } catch (err) {
+                console.warn('Python burnout fetch failed:', err.message);
+            }
+
+            if (!pythonBurnout || pythonBurnout.burnout_score === 0) {
                 return res.json({
                     score: null,
                     alert_level: 'unknown',
                     message: 'No burnout data yet. Complete daily check-ins for at least 7 days to get your score.',
                     days_logged: checkinCount.days,
-                    days_needed: Math.max(0, 7 - checkinCount.days)
+                    days_needed: Math.max(0, 4 - checkinCount.days),
+                    latest_checkin: latestCheckin
                 });
             }
 
-            // Interpretation of the score
-            const interpretation = getAlertInterpretation(latest.score);
+            // Map risk levels to Express alert levels
+            let alert_level = "good";
+            if (pythonBurnout.risk_level === "high") alert_level = "high";
+            else if (pythonBurnout.risk_level === "medium") alert_level = "moderate";
+
+            let interpretation = 'You\'re doing well! Keep maintaining your current habits.';
+            if (pythonBurnout.burnout_score >= 75) {
+                interpretation = 'Crisis mode - Please reach out to a counselor or trusted person immediately.';
+                alert_level = 'crisis';
+            } else if (pythonBurnout.burnout_score >= 55) {
+                interpretation = 'High burnout risk - Take a break today. Consider seeking support.';
+                alert_level = 'high';
+            } else if (pythonBurnout.burnout_score >= 30) {
+                interpretation = 'Getting stressed - Schedule breaks, prioritize sleep, and reduce workload.';
+                alert_level = 'moderate';
+            }
 
             res.json({
-                score: latest.score,
-                alert_level: latest.alert_level,
-                date: latest.date,
-                baseline: {
-                    sleep: latest.baseline_sleep,
-                    stress: latest.baseline_stress,
-                    exercise: latest.baseline_exercise
-                },
-                current: {
-                    sleep: latest.current_sleep,
-                    stress: latest.current_stress,
-                    exercise: latest.current_exercise
-                },
+                score: Math.round(pythonBurnout.burnout_score / 10),
+                alert_level: alert_level,
+                date: new Date().toISOString().split('T')[0],
                 interpretation,
-                days_logged: checkinCount.days
+                days_logged: checkinCount.days,
+                latest_checkin: latestCheckin
             });
         } catch (err) {
             console.error('Burnout score error:', err);
@@ -234,8 +272,26 @@ module.exports = function (db, authenticateToken) {
     });
 
     // GET /api/burnout/recommendations - What to do about burnout
-    router.get('/recommendations', authenticateToken, (req, res) => {
+    router.get('/recommendations', authenticateToken, async (req, res) => {
         try {
+            let pythonRecs = null;
+            try {
+                const resRecs = await fetch(`http://localhost:8000/api/v1/recommendations/${req.user.id}`);
+                if (resRecs.ok) {
+                    pythonRecs = await resRecs.json();
+                }
+            } catch (err) {
+                console.warn('Failed to load Python recommendations:', err.message);
+            }
+
+            if (pythonRecs) {
+                const list = [...(pythonRecs.financial || []), ...(pythonRecs.wellness || []), ...(pythonRecs.productivity || [])];
+                return res.json({
+                    recommendations: list,
+                    priority: list.length > 3 ? 'high' : 'medium'
+                });
+            }
+
             const latest = db.prepare(`
         SELECT * FROM burnout_scores WHERE user_id = ? ORDER BY date DESC LIMIT 1
       `).get(req.user.id);

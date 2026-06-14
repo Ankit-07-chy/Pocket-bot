@@ -7,14 +7,14 @@ const router = express.Router();
 
 // Reference data: typical costs per transport mode
 const TRANSPORT_COSTS = {
-    uber: { avg_per_km: 2.50, base: 5.00 },
-    taxi: { avg_per_km: 2.00, base: 4.00 },
-    bus: { avg_per_trip: 2.50, monthly_pass: 40 },
-    subway: { avg_per_trip: 2.75, monthly_pass: 45 },
-    bike: { avg_per_trip: 0, monthly_rental: 15 },
+    uber: { avg_per_km: 15.00, base: 50.00 },
+    taxi: { avg_per_km: 12.00, base: 40.00 },
+    bus: { avg_per_trip: 15.00, monthly_pass: 400 },
+    subway: { avg_per_trip: 20.00, monthly_pass: 600 },
+    bike: { avg_per_trip: 0, monthly_rental: 150 },
     walk: { avg_per_trip: 0 },
-    carpool: { avg_per_trip: 3.00 },
-    drive: { avg_per_km: 0.50, parking: 5.00 }
+    carpool: { avg_per_trip: 50.00 },
+    drive: { avg_per_km: 7.00, parking: 50.00 }
 };
 
 module.exports = function (db, authenticateToken) {
@@ -167,7 +167,7 @@ module.exports = function (db, authenticateToken) {
                 const withoutPass = busTrips.total;
                 if (withoutPass > passCost) {
                     passRecommendation = {
-                        message: `You take ${busTrips.trips} bus trips/month. A monthly pass ($${passCost}) would save you $${(withoutPass - passCost).toFixed(2)}!`,
+                        message: `You take ${busTrips.trips} bus trips/month. A monthly pass (₹${passCost}) would save you ₹${(withoutPass - passCost).toFixed(2)}!`,
                         savings: Math.round((withoutPass - passCost) * 100) / 100
                     };
                 }

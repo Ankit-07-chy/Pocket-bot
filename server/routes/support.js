@@ -9,7 +9,7 @@ const router = express.Router();
 module.exports = function (db, authenticateToken) {
 
     // POST /api/chat - Send message to AI support
-    router.post('/chat', authenticateToken, (req, res) => {
+    router.post('/chat', authenticateToken, async (req, res) => {
         try {
             const { message } = req.body;
 
@@ -20,8 +20,67 @@ module.exports = function (db, authenticateToken) {
             // Gather all user context for personalized response
             const context = gatherUserContext(db, req.user.id);
 
-            // Generate AI response based on rules + context
-            const aiResponse = generateResponse(message, context);
+            // Enrich with Python Wellness & Burnout dashboard context
+            let pythonDashboard = null;
+            try {
+                const dashboardRes = await fetch(`http://localhost:8000/api/v1/dashboard/${req.user.id}`);
+                if (dashboardRes.ok) {
+                    pythonDashboard = await dashboardRes.json();
+                }
+            } catch (err) {
+                console.warn('Failed to load Python dashboard context for chat:', err.message);
+            }
+
+            if (pythonDashboard) {
+                context.wellness = {
+                    wellness_score: pythonDashboard.wellness_score,
+                    category: pythonDashboard.wellness_category
+                };
+                context.burnout = {
+                    burnout_score: pythonDashboard.burnout_score,
+                    risk_level: pythonDashboard.burnout_risk
+                };
+                context.financial_health = {
+                    financial_health: pythonDashboard.financial_health,
+                    budget_adherence: pythonDashboard.financial_health_details?.budget_adherence,
+                    savings_score: pythonDashboard.financial_health_details?.savings_score,
+                    forecast_score: pythonDashboard.financial_health_details?.forecast_score
+                };
+                context.expenses.current_total = pythonDashboard.current_month_summary?.total_spent_so_far;
+                context.expenses.remaining = pythonDashboard.remaining_budget?.total_remaining;
+                context.alerts = pythonDashboard.alerts;
+                context.forecast = pythonDashboard.forecast;
+            }
+
+            // Generate AI response by proxying to the Python backend (Groq chatbot)
+            let aiResponse = null;
+            let suggestions = null;
+
+            try {
+                const chatRes = await fetch('http://localhost:8000/api/support/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: String(req.user.id), message, support_type: 'ai' })
+                });
+
+                if (chatRes.ok) {
+                    const chatData = await chatRes.json();
+                    aiResponse = chatData.message;
+                    suggestions = chatData.suggested_actions;
+                } else {
+                    console.warn('Python chatbot API returned non-OK status:', chatRes.status);
+                }
+            } catch (err) {
+                console.error('Failed to proxy chat to Python backend:', err.message);
+            }
+
+            if (!aiResponse) {
+                // Fall back to rule-based response
+                aiResponse = generateResponse(message, context);
+            }
+            if (!suggestions) {
+                suggestions = getSuggestions(context);
+            }
 
             // Save to chat history
             const date = new Date().toISOString().split('T')[0];
@@ -32,11 +91,48 @@ module.exports = function (db, authenticateToken) {
 
             res.json({
                 response: aiResponse,
-                suggestions: getSuggestions(context)
+                suggestions: suggestions
             });
         } catch (err) {
             console.error('Chat error:', err);
             res.status(500).json({ error: 'Failed to process message.' });
+        }
+    });
+
+    // POST /api/support/peer/connect - Connect with a peer/mentor
+    router.post('/peer/connect', authenticateToken, async (req, res) => {
+        try {
+            const pythonUrl = `http://localhost:8000/api/support/peer/connect`;
+            const options = {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    user_id: String(req.user.id),
+                    issue_category: req.body.issue_category || 'burnout',
+                    description: req.body.description || 'Burnout risk is high. Automated connection request.'
+                })
+            };
+            const response = await fetch(pythonUrl, options);
+            const data = await response.json();
+            res.status(response.status).json(data);
+        } catch (err) {
+            console.error('Peer connect proxy failed:', err.message);
+            res.status(502).json({ error: 'Failed to connect with peer support.' });
+        }
+    });
+
+    // GET /api/support/peer/leaderboard - Reputation leaderboard
+    router.get('/peer/leaderboard', authenticateToken, async (req, res) => {
+        try {
+            const pythonUrl = `http://localhost:8000/api/support/peer/leaderboard`;
+            const response = await fetch(pythonUrl);
+            const data = await response.json();
+            res.status(response.status).json(data);
+        } catch (err) {
+            console.error('Peer leaderboard proxy failed:', err.message);
+            res.status(502).json({ error: 'Failed to fetch leaderboard.' });
         }
     });
 
@@ -117,6 +213,92 @@ module.exports = function (db, authenticateToken) {
         } catch (err) {
             console.error('Chat history error:', err);
             res.status(500).json({ error: 'Failed to get chat history.' });
+        }
+    });
+
+    const { generateRecommendation, generatePurchaseAdvice, generateChatResponse } = require('../gemini');
+
+    // GET /api/support/recommendation - Generate AI wellness & finance recommendation
+    router.get('/recommendation', authenticateToken, async (req, res) => {
+        try {
+            const context = gatherUserContext(db, req.user.id);
+            
+            // Extract parameters for prompt
+            const latestHealth = context.health || { sleep_hours: 8, stress_level: 1, mood: 'neutral' };
+            const totalSpent = context.expenses.reduce((sum, e) => sum + e.total, 0);
+            const foodExpense = context.expenses.find(e => e.category === 'food')?.total || 0;
+            const foodPercent = totalSpent > 0 ? (foodExpense / totalSpent) * 100 : 0;
+            
+            const aiData = {
+                sleep_hours: latestHealth.sleep_hours,
+                stress_level: latestHealth.stress_level,
+                mood: latestHealth.mood,
+                monthly_pocket_money: context.user?.monthly_income || 0,
+                total_spent: totalSpent,
+                food_percent: foodPercent
+            };
+            
+            const rec = await generateRecommendation(aiData);
+            
+            // Save to DB
+            const date = new Date().toISOString().split('T')[0];
+            db.prepare(`
+                INSERT INTO recommendations (user_id, date, type, text)
+                VALUES (?, ?, ?, ?)
+            `).run(req.user.id, date, rec.type, rec.message);
+            
+            res.json({
+                type: rec.type,
+                message: rec.message,
+                created_at: new Date().toISOString()
+            });
+        } catch (err) {
+            console.error('Gemini recommendation error:', err);
+            res.status(500).json({ error: 'Failed to generate recommendation.' });
+        }
+    });
+
+    // POST /api/support/purchase-advice - Buy advisor
+    router.post('/purchase-advice', authenticateToken, async (req, res) => {
+        try {
+            const { name, cost } = req.body;
+            if (!name || cost === undefined) {
+                return res.status(400).json({ error: 'Item name and cost are required.' });
+            }
+            
+            const context = gatherUserContext(db, req.user.id);
+            
+            // Financial analytics
+            const monthlyPocketMoney = context.user?.monthly_income || 0;
+            const totalExpenses = db.prepare(`
+                SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ?
+            `).get(req.user.id).total;
+            
+            const remainingBalance = monthlyPocketMoney - totalExpenses;
+            
+            // Calculate safe daily spending
+            const today = new Date();
+            const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+            const remainingDays = Math.max(1, lastDay - today.getDate());
+            const safeDailySpending = remainingBalance > 0 ? (remainingBalance / remainingDays) : 0;
+            
+            const aiContext = {
+                remaining_balance: remainingBalance,
+                safe_daily_spending: safeDailySpending,
+                total_spent: totalExpenses
+            };
+            
+            const advice = await generatePurchaseAdvice(aiContext, name, parseFloat(cost));
+            
+            res.json({
+                affordable: advice.affordable,
+                message: advice.message,
+                remaining_balance: remainingBalance,
+                safe_daily_spending: safeDailySpending
+            });
+        } catch (err) {
+            console.error('Purchase advisor error:', err);
+            res.status(500).json({ error: 'Failed to process purchase advice.' });
         }
     });
 
@@ -240,14 +422,14 @@ function generateResponse(message, context) {
         const totalExpenses = context.expenses.reduce((s, e) => s + e.total, 0);
         const dailySpend = totalExpenses / 7;
 
-        let response = `Looking at your spending: you've spent $${totalExpenses.toFixed(2)} in the last 7 days ($${dailySpend.toFixed(2)}/day). `;
+        let response = `Looking at your spending: you've spent ₹${totalExpenses.toFixed(2)} in the last 7 days (₹${dailySpend.toFixed(2)}/day). `;
 
         if (user.daily_budget > 0 && dailySpend > user.daily_budget) {
-            response += `That's above your $${user.daily_budget}/day budget. `;
+            response += `That's above your ₹${user.daily_budget}/day budget. `;
         }
 
-        if (foodSpend > 10) {
-            response += `Your food spending ($${foodSpend.toFixed(2)}/day) is the biggest opportunity to save. Try cooking at home - rice, beans, and eggs make a great $3 meal. `;
+        if (foodSpend > 500) {
+            response += `Your food spending (₹${foodSpend.toFixed(2)}/day) is the biggest opportunity to save. Try cooking at home - rice, beans, and eggs make a great ₹150 meal. `;
         }
 
         response += `Want me to suggest specific budget meals or help you find where to cut back?`;
@@ -256,12 +438,12 @@ function generateResponse(message, context) {
 
     // Food related
     if (msg.includes('food') || msg.includes('eat') || msg.includes('hungry') || msg.includes('meal') || msg.includes('cook')) {
-        if (foodSpend > 10) {
-            return `You're spending about $${foodSpend.toFixed(2)}/day on food. The student sweet spot is $6-8/day. ` +
-                `Here are some quick wins: breakfast (oatmeal + banana = $1.50), lunch (rice + beans = $2.50), ` +
-                `dinner (pasta + sauce = $2.00). That's a full day for $6! Check the Food Recommendations section for more ideas.`;
+        if (foodSpend > 500) {
+            return `You're spending about ₹${foodSpend.toFixed(2)}/day on food. The student sweet spot is ₹300-500/day. ` +
+                `Here are some quick wins: breakfast (oatmeal + banana = ₹75), lunch (rice + beans = ₹125), ` +
+                `dinner (pasta + sauce = ₹100). That's a full day for ₹300! Check the Food Recommendations section for more ideas.`;
         }
-        return `You're doing well with food spending ($${foodSpend.toFixed(2)}/day)! ` +
+        return `You're doing well with food spending (₹${foodSpend.toFixed(2)}/day)! ` +
             `Make sure you're getting enough nutrition though. A balanced meal doesn't have to be expensive - ` +
             `rice, vegetables, and protein (eggs, beans, tofu) cover your basics.`;
     }
@@ -347,7 +529,7 @@ function getSuggestions(context) {
     if (context.sleep.avg < 7) {
         suggestions.push('Help me sleep better');
     }
-    if (context.foodSpend > 8) {
+    if (context.foodSpend > 400) {
         suggestions.push('Show me budget meal ideas');
     }
     if (context.exercise.days_zero >= 3) {
@@ -377,10 +559,10 @@ function generatePersonalizedSuggestions(context) {
     }
 
     // Overspending on food + high stress (stress eating?)
-    if (foodSpend > 10 && stress.avg >= 6) {
+    if (foodSpend > 500 && stress.avg >= 6) {
         suggestions.push({
             type: 'food',
-            text: `Stress eating? Your food spend is $${foodSpend.toFixed(2)}/day when stressed. Try these $3 meal alternatives you might like.`,
+            text: `Stress eating? Your food spend is ₹${foodSpend.toFixed(2)}/day when stressed. Try these ₹150 meal alternatives you might like.`,
             priority: 'medium'
         });
     }

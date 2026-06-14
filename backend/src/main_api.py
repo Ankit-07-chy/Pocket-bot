@@ -1,6 +1,6 @@
 """
 FastAPI application - Poket Bot
-Expense Management & Personalized Support 
+Production-ready version with Expense Management & Personalized Support
 Organized by feature sections for better maintainability
 """
 
@@ -10,6 +10,18 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Optional
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+
+# Reconfigure stdout/stderr to UTF-8 to prevent encoding crashes on Windows console
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding='utf-8')
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # ==================== PRODUCTION-READY PATH HANDLING ====================
 def setup_project_paths():
@@ -79,12 +91,12 @@ try:
     from backend.src.expense_management.budget_planner import BudgetPlanner
     from backend.src.expense_management.schemas import (
         InitializeUserRequest, InitializeUserResponse,
-        OnboardUserRequest, OnboardUserResponse,
         CustomBudgetRequest, BudgetPlanResponse,
         MonthlyTrendResponse, CategoryTrendResponse,
         ForecastResponse, AlertResponse,
         RemainingBudgetResponse, DashboardResponse,
-        HealthCheckResponse, ErrorResponse, ExpenseCreate
+        HealthCheckResponse, ErrorResponse, ExpenseCreate,
+        OnboardUserRequest, OnboardUserResponse
     )
     print("[OK] Expense Management imports successful")
 
@@ -104,21 +116,21 @@ except ImportError as e:
         if str(expense_mgmt_path) not in sys.path:
             sys.path.insert(0, str(expense_mgmt_path))
 
-        from initialize_boundary import ExpenseInitializer
-        from alert_system import AlertSystem
-        from trend_analyzer import TrendAnalyzer
-        from forecaster import ExpenseForecaster
-        from firebase_service import FirebaseExpenseService
-        from expense_analyzer import ExpenseAnalyzer
-        from budget_planner import BudgetPlanner
-        from schemas import (
+        from backend.src.expense_management.initialize_boundary import ExpenseInitializer
+        from backend.src.expense_management.alert_system import AlertSystem
+        from backend.src.expense_management.trend_analyzer import TrendAnalyzer
+        from backend.src.expense_management.forecaster import ExpenseForecaster
+        from backend.src.expense_management.firebase_service import FirebaseExpenseService
+        from backend.src.expense_management.expense_analyzer import ExpenseAnalyzer
+        from backend.src.expense_management.budget_planner import BudgetPlanner
+        from backend.src.expense_management.schemas import (
             InitializeUserRequest, InitializeUserResponse,
-            OnboardUserRequest, OnboardUserResponse,
             CustomBudgetRequest, BudgetPlanResponse,
             MonthlyTrendResponse, CategoryTrendResponse,
             ForecastResponse, AlertResponse,
             RemainingBudgetResponse, DashboardResponse,
-            HealthCheckResponse, ErrorResponse, ExpenseCreate
+            HealthCheckResponse, ErrorResponse, ExpenseCreate,
+            OnboardUserRequest, OnboardUserResponse
         )
         print("[OK] Expense Management imports successful (direct path)")
 
@@ -147,28 +159,34 @@ except ImportError as e:
         planner = MockService()
 
         try:
+            # pyrefly: ignore [missing-import]
             from schemas import (
                 InitializeUserRequest, InitializeUserResponse,
-                OnboardUserRequest, OnboardUserResponse,
                 CustomBudgetRequest, BudgetPlanResponse,
                 MonthlyTrendResponse, CategoryTrendResponse,
                 ForecastResponse, AlertResponse,
                 RemainingBudgetResponse, DashboardResponse,
-                HealthCheckResponse, ErrorResponse, ExpenseCreate
+                HealthCheckResponse, ErrorResponse, ExpenseCreate,
+                OnboardUserRequest, OnboardUserResponse
             )
         except ImportError:
             class InitializeUserRequest(BaseModel): user_id: str; current_month_budget: float
             class InitializeUserResponse(BaseModel): success: bool; user_id: str
+            class CustomBudgetRequest(BaseModel): user_id: str; custom_budget: float; savings_target: float = 0
+            class HealthCheckResponse(BaseModel): status: str; timestamp: str; version: str
+            class ExpenseCreate(BaseModel): amount: float; category: str; description: str = ""
             class OnboardUserRequest(BaseModel):
                 user_id: str
                 last_month_total: float
                 last_month_category_expenses: dict
                 this_month_budget: float
                 savings_target: float = 0.0
-            class OnboardUserResponse(BaseModel): success: bool; user_id: str
-            class CustomBudgetRequest(BaseModel): user_id: str; custom_budget: float; savings_target: float = 0
-            class HealthCheckResponse(BaseModel): status: str; timestamp: str; version: str
-            class ExpenseCreate(BaseModel): amount: float; category: str; description: str = ""
+            class OnboardUserResponse(BaseModel):
+                user_id: str
+                success: bool
+                budget_plan: dict
+                summary: dict
+                error: Optional[str] = None
             BudgetPlanResponse = dict
             MonthlyTrendResponse = dict
             CategoryTrendResponse = dict
@@ -212,7 +230,9 @@ support_router = None
 chat_manager = None
 
 try:
+    # pyrefly: ignore [missing-import]
     from personalised_support.api_routes import router as support_router
+    # pyrefly: ignore [missing-import]
     from personalised_support import chat_manager
     _llm_status = "operational" if chat_manager.ai_chatbot.llm else "limited (no LLM key)"
     print(f"[OK] Personalised Support imported — AI chatbot: {_llm_status}")
@@ -221,8 +241,36 @@ except ImportError as e:
     support_router = None
     chat_manager = None
 
-# ==================== FIREBASE INITIALIZATION (removed — using SQLite) ====================
-firebase_initialized = False  # kept for status endpoint compatibility
+
+# ==================== WELLNESS & BURNOUT IMPORTS ====================
+wellness_engine = None
+burnout_predictor = None
+
+try:
+    from burnout_prediction.burnout_predictor import BurnoutPredictor
+    from wellness_engine import WellnessEngine
+    from expense_management.sqlite_service import DB_PATH
+
+    wellness_engine = WellnessEngine()
+    burnout_predictor = BurnoutPredictor(DB_PATH)
+    print("[OK] Wellness & Burnout services initialized successfully")
+except Exception as e:
+    print(f"[WARN] Wellness & Burnout services initialization failed: {e}")
+
+# ==================== FIREBASE INITIALIZATION ====================
+import firebase_admin
+from firebase_admin import db
+
+firebase_initialized = False
+try:
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(options={
+            'databaseURL': os.getenv('FIREBASE_DATABASE_URL', 'https://your-database.firebaseio.com/')
+        })
+    firebase_initialized = True
+    print(f"✅ Firebase initialized")
+except Exception as e:
+    print(f"⚠ Firebase initialization: {e}")
 
 # ==================== FASTAPI APPLICATION SETUP ====================
 app = FastAPI(
@@ -254,7 +302,6 @@ else:
 # ║                         SYSTEM HEALTH & STATUS                                  ║
 # ╚════════════════════════════════════════════════════════════════════════════════╝
 
-# system health
 @app.get("/health", response_model=HealthCheckResponse)
 async def health_check():
     """System health check endpoint"""
@@ -262,11 +309,10 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "version": "2.0.0",
-        "database": "sqlite",
+        "firebase_initialized": firebase_initialized,
         "services_initialized": expense_initializer is not None
     }
 
-# root endpoint
 @app.get("/")
 async def root():
     """Root endpoint with API information"""
@@ -288,7 +334,6 @@ async def root():
         }
     }
 
-# check status
 @app.get("/api/v1/status")
 async def system_status():
     """Get comprehensive system status and component information"""
@@ -297,9 +342,9 @@ async def system_status():
         "timestamp": datetime.now().isoformat(),
         "version": "2.0.0",
         "components": {
-            "database": {
-                "status": "sqlite",
-                "available": True
+            "firebase": {
+                "status": "initialized" if firebase_initialized else "unavailable",
+                "available": firebase_initialized
             },
             "expense_management": {
                 "analyzer": "available" if analyzer is not None else "unavailable",
@@ -434,7 +479,7 @@ async def onboard_user(request: OnboardUserRequest):
                 )
             except Exception as ctx_err:
                 # Non-fatal — chatbot will reload context on next message
-                print(f"[WARN] Could not pre-load chatbot context: {ctx_err}")
+                print(f"⚠ Could not pre-load chatbot context: {ctx_err}")
 
         return result
 
@@ -469,25 +514,23 @@ async def reinitialize_with_custom_budget(request: CustomBudgetRequest):
 
 # ==================== EXPENSE TRACKING ====================
 
-@app.post("/api/v1/expenses/{user_id}")
+@app.post("/api/v1/expenses")
 async def create_expense(user_id: str, expense: ExpenseCreate):
     """Create a new expense record"""
     try:
         if firebase_service is None:
-            raise HTTPException(status_code=503, detail="Expense service not available")
+            raise HTTPException(status_code=503, detail="Firebase service not available")
 
         expense_id = firebase_service.add_expense(
             user_id=user_id,
             amount=expense.amount,
             category=expense.category,
-            description=expense.description or "",
-            date=expense.date,
+            description=expense.description
         )
 
         return {
-            'success': True,
-            'expense_id': expense_id,
-            'data': {**expense.dict(), 'created_at': datetime.now().isoformat()}
+            "success": True,
+            "expense_id": expense_id
         }
 
     except HTTPException:
@@ -520,7 +563,7 @@ async def get_budget_plan(user_id: str):
     """Retrieve the current budget plan for a user"""
     try:
         if firebase_service is None:
-            raise HTTPException(status_code=503, detail="Expense service not available")
+            raise HTTPException(status_code=503, detail="Firebase service not available")
 
         plan = firebase_service.get_budget_plan(user_id)
 
@@ -544,19 +587,32 @@ async def get_remaining_budget(user_id: str):
         if firebase_service is None or alert_system is None:
             raise HTTPException(status_code=503, detail="Service not available")
 
-        budget_data = firebase_service.get_budget_plan(user_id)
+        budget_plan = firebase_service.get_budget_plan(user_id)
         current_expenses = firebase_service.get_current_month_expenses(user_id)
 
-        if not budget_data:
+        if not budget_plan:
             raise HTTPException(status_code=404, detail="Budget plan not found")
 
-        plan = budget_data.get('plan', budget_data)
-        remaining = alert_system.get_remaining_budget(plan, current_expenses)
+        remaining = alert_system.get_remaining_budget(budget_plan['plan'], current_expenses)
+
+        # Calculate total remaining and safe daily limit
+        total_budget = float(budget_plan['plan'].get('total_budget', 0.0))
+        total_spent = sum(alert_system._categorize_expenses(current_expenses).values())
+        total_remaining = total_budget - total_spent
+
+        import calendar
+        today = datetime.now()
+        _, last_day = calendar.monthrange(today.year, today.month)
+        remaining_days = max(1, last_day - today.day)
+        safe_daily_limit = total_remaining / remaining_days
+
+        remaining['total_remaining'] = total_remaining
+        remaining['safe_daily_limit'] = safe_daily_limit
 
         return {
             'user_id': user_id,
             'remaining_budget': remaining,
-            'total_budget': plan.get('total_budget', 0)
+            'total_budget': total_budget
         }
 
     except HTTPException:
@@ -573,20 +629,18 @@ async def get_user_alerts(user_id: str):
         if firebase_service is None or alert_system is None:
             raise HTTPException(status_code=503, detail="Service not available")
 
-        budget_data = firebase_service.get_budget_plan(user_id)
+        budget_plan = firebase_service.get_budget_plan(user_id)
         current_expenses = firebase_service.get_current_month_expenses(user_id)
 
-        if not budget_data:
+        if not budget_plan:
             raise HTTPException(status_code=404, detail="Budget plan not found")
-
-        plan = budget_data.get('plan', budget_data)
 
         # Check for alerts
         category_alerts = alert_system.check_category_overspending(
-            user_id, plan, current_expenses
+            user_id, budget_plan['plan'], current_expenses
         )
         total_alert = alert_system.check_total_budget_status(
-            user_id, plan, current_expenses
+            user_id, budget_plan['plan'], current_expenses
         )
 
         alerts = [alert.to_dict() for alert in category_alerts]
@@ -682,8 +736,8 @@ async def get_category_trends(user_id: str, category: str, months: int = Query(6
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/v1/trends/compare/{user_id}")
-async def compare_months(user_id: str, month1: str = Query(...), month2: str = Query(...)):
+@app.get("/api/v1/trends/compare")
+async def compare_months(user_id: str, month1: str, month2: str):
     """Compare spending between two months (format: YYYY-MM)"""
     try:
         if trend_analyzer is None:
@@ -789,23 +843,39 @@ async def get_dashboard(user_id: str):
             raise HTTPException(status_code=503, detail="One or more services not available")
 
         # Fetch all data
-        budget_data = firebase_service.get_budget_plan(user_id)
+        budget_plan = firebase_service.get_budget_plan(user_id)
         current_expenses = firebase_service.get_current_month_expenses(user_id)
         previous_expenses = firebase_service.get_previous_month_expenses(user_id)
 
-        if not budget_data:
-            raise HTTPException(status_code=404, detail="User not initialized")
-
-        plan = budget_data.get('plan', budget_data)
+        if not budget_plan:
+            return {
+                "user_id": user_id,
+                "status": "new_user",
+                "message": "Complete onboarding to generate your financial profile"
+            }
 
         # Get alerts
         category_alerts = alert_system.check_category_overspending(
-            user_id, plan, current_expenses
+            user_id, budget_plan['plan'], current_expenses
         )
         alerts = [alert.to_dict() for alert in category_alerts]
 
         # Get remaining budget
-        remaining = alert_system.get_remaining_budget(plan, current_expenses)
+        remaining = alert_system.get_remaining_budget(budget_plan['plan'], current_expenses)
+
+        # Calculate total remaining and safe daily limit
+        total_budget = float(budget_plan['plan'].get('total_budget', 0.0))
+        total_spent = sum(alert_system._categorize_expenses(current_expenses).values())
+        total_remaining = total_budget - total_spent
+
+        import calendar
+        today = datetime.now()
+        _, last_day = calendar.monthrange(today.year, today.month)
+        remaining_days = max(1, last_day - today.day)
+        safe_daily_limit = total_remaining / remaining_days
+
+        remaining['total_remaining'] = total_remaining
+        remaining['safe_daily_limit'] = safe_daily_limit
 
         # Get trends
         trends = trend_analyzer.get_monthly_trend(user_id, months=6)
@@ -820,24 +890,169 @@ async def get_dashboard(user_id: str):
         prev_analysis = analyzer.analyze_previous_month(previous_expenses) if previous_expenses else {}
         curr_analysis = analyzer.analyze_previous_month(current_expenses) if current_expenses else {}
 
+        # Get financial health score
+        fin_health = 80
+        budget_adherence = 100
+        savings_score = 100
+        forecast_score = 100
+        if wellness_engine is not None:
+            fin_data = wellness_engine.calculate_financial_health(user_id)
+            fin_health = fin_data.get("financial_health", 50)
+            budget_adherence = fin_data.get("budget_adherence", 100)
+            savings_score = fin_data.get("savings_score", 100)
+            forecast_score = fin_data.get("forecast_score", 100)
+
+        # Get burnout score and risk level
+        burnout_score = 0
+        burnout_risk = "low"
+        if burnout_predictor is not None:
+            try:
+                user_id_int = int(user_id)
+                pred = burnout_predictor.predict(user_id_int)
+                burnout_score = int(pred.combined_score * 100)
+                risk_map = {
+                    "good": "low",
+                    "moderate": "medium",
+                    "high": "high",
+                    "crisis": "high"
+                }
+                burnout_risk = risk_map.get(pred.alert_level.value, "low")
+            except Exception as e:
+                print(f"Error predicting burnout in dashboard: {e}")
+
+        # Get wellness score
+        wellness_score = 80
+        wellness_category = "Good"
+        if wellness_engine is not None:
+            well_data = wellness_engine.calculate_wellness_score(fin_health, burnout_score)
+            wellness_score = well_data.get("wellness_score", 50)
+            wellness_category = well_data.get("category", "Moderate")
+
+        # Get recommendations
+        recommendations = {
+            "financial": [],
+            "wellness": [],
+            "productivity": []
+        }
+        if wellness_engine is not None:
+            recommendations = wellness_engine.generate_insights(user_id, wellness_score, fin_health, burnout_score)
+
         return {
-            'user_id': user_id,
-            'generated_at': datetime.now().isoformat(),
-            'previous_month_summary': prev_analysis,
-            'current_month_summary': curr_analysis,
-            'budget_plan': plan,
-            'alerts': alerts,
-            'alert_count': len(alerts),
-            'remaining_budget': remaining,
-            'trend_analysis': trends.get('analysis', {}) if isinstance(trends, dict) else {},
-            'forecast': forecast if isinstance(forecast, dict) else {},
-            'spending_velocity': velocity if isinstance(velocity, dict) else {}
+            "financial_health": fin_health,
+            "wellness_score": wellness_score,
+            "burnout_risk": burnout_risk,
+            "remaining_budget": remaining,
+            "alerts": alerts,
+            "forecast": forecast if isinstance(forecast, dict) else {},
+            "trend_analysis": trends.get('analysis', {}) if isinstance(trends, dict) else {},
+            "recommendations": recommendations,
+            
+            # backwards-compatible fields
+            "user_id": user_id,
+            "generated_at": datetime.now().isoformat(),
+            "previous_month_summary": prev_analysis,
+            "current_month_summary": curr_analysis,
+            "budget_plan": budget_plan.get('plan', budget_plan),
+            "spending_velocity": velocity if isinstance(velocity, dict) else {},
+            "wellness_category": wellness_category,
+            "burnout_score": burnout_score,
+            "financial_health_details": {
+                "budget_adherence": budget_adherence,
+                "savings_score": savings_score,
+                "forecast_score": forecast_score
+            }
         }
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== WELLNESS & BURNOUT ENDPOINTS ====================
+
+@app.get("/api/v1/burnout/{user_id}")
+async def get_user_burnout(user_id: str):
+    """Retrieve burnout analysis using the ML/Hybrid/Rule-based predictor"""
+    try:
+        if burnout_predictor is None:
+            raise HTTPException(status_code=503, detail="BurnoutPredictor service not available")
+        
+        user_id_int = int(user_id)
+        pred = burnout_predictor.predict(user_id_int)
+        
+        risk_map = {
+            "good": "low",
+            "moderate": "medium",
+            "high": "high",
+            "crisis": "high"
+        }
+        risk_level = risk_map.get(pred.alert_level.value, "low")
+        
+        return {
+            "user_id": user_id,
+            "burnout_score": int(pred.combined_score * 100),
+            "risk_level": risk_level,
+            "financial_stress": int(pred.financial_score * 100),
+            "mental_stress": int(pred.mental_score * 100),
+            "confidence": round(pred.confidence, 2)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/wellness-score/{user_id}")
+async def get_user_wellness_score(user_id: str):
+    """Calculate and return the consolidated student wellness score"""
+    try:
+        if wellness_engine is None or burnout_predictor is None:
+            raise HTTPException(status_code=503, detail="Wellness engine services not available")
+        
+        user_id_int = int(user_id)
+        pred = burnout_predictor.predict(user_id_int)
+        burnout_score = int(pred.combined_score * 100)
+        
+        fin_health = wellness_engine.calculate_financial_health(user_id)
+        fin_score = fin_health["financial_health"]
+        
+        wellness_data = wellness_engine.calculate_wellness_score(fin_score, burnout_score)
+        return wellness_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/financial-health/{user_id}")
+async def get_user_financial_health(user_id: str):
+    """Calculate and return detailed financial health metrics"""
+    try:
+        if wellness_engine is None:
+            raise HTTPException(status_code=503, detail="Wellness engine service not available")
+        
+        fin_health = wellness_engine.calculate_financial_health(user_id)
+        return fin_health
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/recommendations/{user_id}")
+async def get_user_recommendations(user_id: str):
+    """Get categorized recommendations (financial, wellness, productivity)"""
+    try:
+        if wellness_engine is None or burnout_predictor is None:
+            raise HTTPException(status_code=503, detail="Wellness services not available")
+        
+        user_id_int = int(user_id)
+        pred = burnout_predictor.predict(user_id_int)
+        burnout_score = int(pred.combined_score * 100)
+        
+        fin_health = wellness_engine.calculate_financial_health(user_id)
+        fin_score = fin_health["financial_health"]
+        
+        wellness_data = wellness_engine.calculate_wellness_score(fin_score, burnout_score)
+        well_score = wellness_data["wellness_score"]
+        
+        recs = wellness_engine.generate_insights(user_id, well_score, fin_score, burnout_score)
+        return recs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
 # ║                        BURNOUT PREDICTION FEATURE                                ║

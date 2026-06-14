@@ -68,10 +68,10 @@ function Expenses() {
                 <form onSubmit={handleSubmit}>
                     <div className="form-row">
                         <div className="form-group">
-                            <label htmlFor="amount">Amount ($)</label>
+                            <label htmlFor="amount">Amount (₹)</label>
                             <input id="amount" type="number" step="0.01" min="0.01" value={form.amount}
                                 onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                                placeholder="15.00" required />
+                                placeholder="150.00" required />
                         </div>
                         <div className="form-group">
                             <label htmlFor="category">Category</label>
@@ -108,16 +108,16 @@ function Expenses() {
             {summary && (
                 <div className="stats-grid">
                     <div className="stat-card">
-                        <div className="stat-value">${summary.total_spent.toFixed(2)}</div>
+                        <div className="stat-value">₹{summary.total_spent.toFixed(2)}</div>
                         <div className="stat-label">Last 7 days</div>
                     </div>
                     <div className="stat-card">
-                        <div className="stat-value">${summary.daily_average.toFixed(2)}</div>
+                        <div className="stat-value">₹{summary.daily_average.toFixed(2)}</div>
                         <div className="stat-label">Daily avg</div>
                     </div>
                     <div className="stat-card">
                         <div className="stat-value" style={{ color: summary.over_budget ? 'var(--danger)' : 'var(--success)' }}>
-                            ${summary.daily_budget.toFixed(2)}
+                            ₹{summary.daily_budget.toFixed(2)}
                         </div>
                         <div className="stat-label">Daily budget</div>
                     </div>
@@ -149,7 +149,7 @@ function Expenses() {
                                         <td>{exp.date}</td>
                                         <td style={{ textTransform: 'capitalize' }}>{exp.category}</td>
                                         <td>{exp.description || '—'}</td>
-                                        <td><strong>${exp.amount.toFixed(2)}</strong></td>
+                                        <td><strong>₹{exp.amount.toFixed(2)}</strong></td>
                                         <td>
                                             <button className="btn btn-danger btn-small" onClick={() => handleDelete(exp.id)}>
                                                 Delete
