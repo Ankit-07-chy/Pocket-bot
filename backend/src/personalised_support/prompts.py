@@ -1,169 +1,107 @@
 """
-Prompt templates for personalized support chatbot
+Prompt templates for personalized support chatbot.
+All prompts enforce short, bullet-point responses.
 """
 from __future__ import annotations
 from typing import Optional
 
-# System prompt for financial support chatbot — user context is injected at runtime
-SYSTEM_PROMPT = """You are a compassionate and knowledgeable personal finance support assistant for Poket Bot,
-an expense management application. Your role is to help users with:
 
-1. Budget planning and expense management advice
-2. Understanding their spending patterns
-3. Financial goal setting and tracking
-4. Money-saving tips and strategies
-5. Emotional support around financial stress
-6. Actionable recommendations based on their data
+SYSTEM_PROMPT = """You are a concise financial support assistant for PocketBuddy.
 
-Your communication style should be:
-- Empathetic and non-judgmental
-- Clear and easy to understand
-- Encouraging and motivating
-- Data-driven when possible (reference the user's actual numbers when available)
-- Practical and actionable
+STRICT RESPONSE RULES — follow every time:
+• Reply ONLY in bullet points (use • or - for each point)
+• Max 5 bullet points per response — never more
+• Each bullet must be 1 short sentence, max 12 words
+• No paragraphs, no long explanations, no padding
+• No greetings, no sign-offs, no filler phrases
+• If the user's data is available, reference 1-2 real numbers
+• If you don't know, say "I need more data to advise on that." (1 line)
 
-Always personalise your advice using the user context provided to you."""
+Your expertise: budgeting, expense tracking, savings, stress around money."""
 
 
 def build_system_prompt(user_context: Optional[dict] = None) -> str:
     """
-    Build a full system prompt, optionally injecting the user's financial context.
-
-    Args:
-        user_context: dict with keys such as:
-            - current_month_total (float)
-            - previous_month_total (float)
-            - budget (float)
-            - category_spending (dict[str, float])
-            - biggest_category (str)
-            - trend (str)  e.g. "increasing", "decreasing", "stable"
-            - budget_status (str)  e.g. "within budget", "over budget"
-
-    Returns:
-        Full system prompt string.
+    Build system prompt, optionally injecting user financial context.
+    Context is appended as a compact data block — not as prose.
     """
     prompt = SYSTEM_PROMPT
 
     if user_context:
-        lines = ["\n\n--- User Financial Context ---"]
+        lines = ["\n\nUSER DATA (use these numbers in your bullets when relevant):"]
 
         if user_context.get("current_month_total") is not None:
-            lines.append(f"Current month spending: ₹{user_context['current_month_total']:,.2f}")
+            lines.append(f"spent_this_month=₹{user_context['current_month_total']:,.0f}")
 
         if user_context.get("previous_month_total") is not None:
-            lines.append(f"Previous month spending: ₹{user_context['previous_month_total']:,.2f}")
+            lines.append(f"last_month=₹{user_context['previous_month_total']:,.0f}")
 
         if user_context.get("budget") is not None:
-            lines.append(f"Monthly budget: ₹{user_context['budget']:,.2f}")
+            lines.append(f"budget=₹{user_context['budget']:,.0f}")
 
         if user_context.get("budget_status"):
-            lines.append(f"Budget status: {user_context['budget_status']}")
+            lines.append(f"status={user_context['budget_status']}")
 
         if user_context.get("biggest_category"):
-            lines.append(f"Biggest spending category: {user_context['biggest_category']}")
+            lines.append(f"top_category={user_context['biggest_category']}")
 
         if user_context.get("trend"):
-            lines.append(f"Spending trend: {user_context['trend']}")
+            lines.append(f"trend={user_context['trend']}")
 
         if user_context.get("category_spending"):
-            cat_lines = ", ".join(
-                f"{cat}: ₹{amt:,.2f}"
+            cats = ", ".join(
+                f"{cat}:₹{amt:,.0f}"
                 for cat, amt in user_context["category_spending"].items()
             )
-            lines.append(f"Category breakdown: {cat_lines}")
+            lines.append(f"categories={cats}")
 
-        lines.append("--- End of Context ---")
         prompt += "\n".join(lines)
 
     return prompt
 
 
 # ---------------------------------------------------------------------------
-# Standalone template strings (used by langchain_chatbot for direct prompts)
+# Standalone template strings used by langchain_chatbot for special analysis
+# All templates enforce bullet-point, short output.
 # ---------------------------------------------------------------------------
 
-SPENDING_ANALYSIS_TEMPLATE = """Analyze the following spending data and provide insights:
+SPENDING_ANALYSIS_TEMPLATE = """Analyse this spending data. Reply ONLY in bullet points (max 5 bullets, 1 sentence each).
 
-User: {user_id}
-Current Month Total: ₹{current_total}
-Previous Month Total: ₹{previous_total}
-Top Categories: {categories}
-Budget Status: {budget_status}
-Trend: {trend}
+spent=₹{current_total} | last_month=₹{previous_total} | top_categories={categories}
+status={budget_status} | trend={trend}
 
-Provide:
-1. Key observations about spending patterns
-2. Areas of concern or over-spending
-3. 2-3 specific, actionable recommendations
-4. Positive trends to encourage
-
-Keep response concise and motivating."""
+Cover: biggest concern, one positive, and 2 specific action steps. Nothing else."""
 
 
-GOAL_SETTING_TEMPLATE = """Help the user set a realistic financial goal based on their data:
+GOAL_SETTING_TEMPLATE = """Give a goal plan. Reply ONLY in bullet points (max 5 bullets, 1 sentence each).
 
-Current Situation:
-- Monthly Income: ₹{monthly_income}
-- Current Spending: ₹{current_spending}
-- Budget: ₹{budget}
-- Goal: {goal_description}
+income=₹{monthly_income} | spending=₹{current_spending} | budget=₹{budget}
+goal={goal_description}
 
-Provide:
-1. Feasibility assessment (realistic timeline)
-2. Required monthly savings needed
-3. Specific action steps to achieve the goal
-4. Potential challenges and solutions
-5. Motivation and encouragement
-
-Be honest but encouraging."""
+Cover: feasibility, monthly savings needed, 2 action steps. Nothing else."""
 
 
-CONTEXTUAL_ADVICE_TEMPLATE = """Provide personalized financial advice based on user context:
+CONTEXTUAL_ADVICE_TEMPLATE = """Give personalised advice. Reply ONLY in bullet points (max 4 bullets, 1 sentence each).
 
-User Profile:
-- Spending Pattern: {spending_pattern}
-- Monthly Budget: ₹{budget}
-- Biggest Expense: {biggest_expense}
-- Recent Trend: {trend}
+budget=₹{budget} | top_expense={biggest_expense} | trend={trend}
+question={user_input}
 
-User Question/Issue: {user_input}
-
-Provide advice that:
-1. Acknowledges their specific situation
-2. References their actual spending data
-3. Gives 2-3 concrete, actionable steps
-4. Is empathetic and encouraging
-
-Keep it concise (2-3 paragraphs)."""
+Be direct. Reference their numbers. No fluff."""
 
 
-CRISIS_SUPPORT_TEMPLATE = """The user is experiencing financial stress or crisis.
+CRISIS_SUPPORT_TEMPLATE = """The user is stressed about money. Reply ONLY in bullet points (max 4 bullets, 1 sentence each).
 
-Situation: {situation}
-User's Emotion: {emotional_state}
+situation={situation} | emotional_state={emotional_state}
 
-Provide:
-1. Empathetic acknowledgment
-2. Immediate practical steps (if applicable)
-3. Breathing room/relief strategies
-4. Resources and next steps
-5. When to seek professional help
-
-Be compassionate, practical, and clear about limitations of this support."""
+Cover: acknowledge feeling, 1 immediate step, 1 resource, 1 encouragement. Nothing else."""
 
 
-CONVERSATION_CONTEXT_TEMPLATE = """You are an expert at understanding financial conversations.
+CONVERSATION_CONTEXT_TEMPLATE = """Analyse this financial support conversation. Respond ONLY with valid JSON.
 
-Conversation so far:
+Conversation:
 {conversation_history}
 
-Latest user message: {latest_message}
+Latest message: {latest_message}
 
-Determine:
-1. Main issue/question being asked
-2. Emotional tone (positive, neutral, stressed, frustrated)
-3. Urgency level (low, medium, high)
-4. Type of support needed (educational, practical, emotional, urgent)
-5. Key context from conversation
-
-Format as JSON with keys: issues (list), support_type (ai/rule_based/peer), urgency (low/medium/high), confidence (0-1), reasoning (string)."""
+JSON keys required: issues (list of strings), support_type (one of: ai, rule_based, peer),
+urgency (one of: low, medium, high), confidence (float 0-1), reasoning (string)."""
