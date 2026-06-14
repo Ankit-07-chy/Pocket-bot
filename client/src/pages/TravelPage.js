@@ -86,10 +86,10 @@ function TravelPage() {
                                 </select>
                             </div>
                             <div className="form-group">
-                                <label htmlFor="travel-cost">Cost ($)</label>
+                                <label htmlFor="travel-cost">Cost (₹)</label>
                                 <input id="travel-cost" type="number" step="0.01" min="0" value={form.cost}
                                     onChange={(e) => setForm({ ...form, cost: e.target.value })}
-                                    placeholder="2.50" />
+                                    placeholder="15" />
                             </div>
                         </div>
                         <div className="form-group">
@@ -110,7 +110,7 @@ function TravelPage() {
                         <>
                             <div className="stats-grid">
                                 <div className="stat-card">
-                                    <div className="stat-value">${savings.monthly_travel_spend.toFixed(2)}</div>
+                                    <div className="stat-value">₹{savings.monthly_travel_spend.toFixed(2)}</div>
                                     <div className="stat-label">Monthly travel spend</div>
                                 </div>
                                 <div className="stat-card">
@@ -119,7 +119,7 @@ function TravelPage() {
                                 </div>
                                 <div className="stat-card">
                                     <div className="stat-value" style={{ color: 'var(--success)' }}>
-                                        ${savings.potential_monthly_savings.toFixed(2)}
+                                        ₹{savings.potential_monthly_savings.toFixed(2)}
                                     </div>
                                     <div className="stat-label">Potential savings</div>
                                 </div>
@@ -139,7 +139,7 @@ function TravelPage() {
                                                 <tr key={i}>
                                                     <td style={{ textTransform: 'capitalize' }}>{s.current}</td>
                                                     <td style={{ textTransform: 'capitalize' }}>{s.suggested}</td>
-                                                    <td style={{ color: 'var(--success)', fontWeight: 'bold' }}>${s.monthly_savings.toFixed(2)}</td>
+                                                    <td style={{ color: 'var(--success)', fontWeight: 'bold' }}>₹{s.monthly_savings.toFixed(2)}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -169,7 +169,7 @@ function TravelPage() {
                                                 <tr key={i}>
                                                     <td>{d.destination}</td>
                                                     <td>{d.visits}</td>
-                                                    <td>${d.avg_cost?.toFixed(2)}</td>
+                                                    <td>₹{d.avg_cost?.toFixed(2)}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -188,7 +188,7 @@ function TravelPage() {
                                                     <td>{r.origin} → {r.destination}</td>
                                                     <td style={{ textTransform: 'capitalize' }}>{r.mode}</td>
                                                     <td>{r.frequency}x/month</td>
-                                                    <td>${r.total_cost?.toFixed(2)}</td>
+                                                    <td>₹{r.total_cost?.toFixed(2)}</td>
                                                 </tr>
                                             ))}
                                         </tbody>

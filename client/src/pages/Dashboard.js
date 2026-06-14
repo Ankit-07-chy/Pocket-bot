@@ -435,26 +435,50 @@ function Dashboard() {
                     )}
                 </div>
 
-                {/* Chart 3: Forecast comparisons (Budget vs Spent vs Projection) */}
+                {/* Chart 3: Spending by Category (7 days) */}
                 <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: '320px' }}>
                     <div className="card-header">
-                        <h2>Budget Forecast Analysis</h2>
+                        <h2>Spending by Category (7 days)</h2>
                     </div>
-                    <div style={{ flex: 1, width: '100%', height: '200px', marginTop: '16px' }}>
-                        <ResponsiveContainer width="100%" height={200}>
-                            <BarChart data={forecastChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
-                                <XAxis dataKey="name" stroke="var(--text-light)" fontSize="0.75rem" />
-                                <YAxis stroke="var(--text-light)" fontSize="0.75rem" />
-                                <Tooltip formatter={(value) => `₹${value}`} />
-                                <Bar dataKey="value" fill="var(--primary)" radius={[8, 8, 0, 0]}>
-                                    {forecastChartData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.color} />
-                                    ))}
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
+                    {donutData.length > 0 ? (
+                        <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: '16px', marginTop: '16px' }}>
+                            <div style={{ width: '150px', height: '150px' }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={donutData}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={45}
+                                            outerRadius={65}
+                                            paddingAngle={4}
+                                            dataKey="value"
+                                        >
+                                            {donutData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={entry.color} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip formatter={(value) => `₹${value.toFixed(2)}`} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div style={{ flex: 1, minWidth: '150px', maxHeight: '180px', overflowY: 'auto' }}>
+                                {donutData.map((d, i) => (
+                                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '3px', backgroundColor: d.color }}></span>
+                                            <span style={{ textTransform: 'capitalize' }}>{getCategoryEmoji(d.name.toLowerCase())} {d.name}</span>
+                                        </div>
+                                        <strong style={{ color: 'var(--text-light)' }}>₹{d.value.toFixed(2)}</strong>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="empty-state" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <p>No recent expenses found. Start adding expenses to view category analysis!</p>
+                        </div>
+                    )}
                 </div>
 
             </div>
@@ -702,6 +726,11 @@ function Dashboard() {
             )}
         </div>
     );
+}
+
+function getCategoryEmoji(category) {
+    const emojis = { food: '🍕', transport: '🚌', entertainment: '🎬', utilities: '💡', education: '📚', health: '💊', other: '📦' };
+    return emojis[category] || '📦';
 }
 
 export default Dashboard;

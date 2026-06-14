@@ -100,24 +100,67 @@ function Register({ onJWTLogin, onFirebaseLogin }) {
                 <form onSubmit={handleFirebaseRegister}>
                     <div className="form-group">
                         <label htmlFor="name">Full Name</label>
-                        <input id="name" name="name" type="text" value={form.name} onChange={handleChange} placeholder="Your name" required />
+                        <input
+                            id="name"
+                            name="name"
+                            type="text"
+                            value={form.name}
+                            onChange={handleChange}
+                            placeholder="Your name"
+                            required
+                        />
                     </div>
+
                     <div className="form-group">
                         <label htmlFor="reg-email">Email</label>
-                        <input id="reg-email" name="email" type="email" value={form.email} onChange={handleChange} placeholder="your@email.com" required autoComplete="email" />
+                        <input
+                            id="reg-email"
+                            name="email"
+                            type="email"
+                            value={form.email}
+                            onChange={handleChange}
+                            placeholder="your@email.com"
+                            required
+                            autoComplete="email"
+                        />
                     </div>
+
                     <div className="form-group">
                         <label htmlFor="reg-password">Password</label>
-                        <input id="reg-password" name="password" type="password" value={form.password} onChange={handleChange} placeholder="Min 6 characters" required minLength={6} autoComplete="new-password" />
+                        <input
+                            id="reg-password"
+                            name="password"
+                            type="password"
+                            value={form.password}
+                            onChange={handleChange}
+                            placeholder="Min 6 characters"
+                            required
+                            minLength={6}
+                            autoComplete="new-password"
+                        />
                     </div>
+
                     <div className="form-row">
                         <div className="form-group">
                             <label htmlFor="major">Major</label>
-                            <input id="major" name="major" type="text" value={form.major} onChange={handleChange} placeholder="e.g. Computer Science" />
+                            <input
+                                id="major"
+                                name="major"
+                                type="text"
+                                value={form.major}
+                                onChange={handleChange}
+                                placeholder="e.g. Computer Science"
+                            />
                         </div>
+
                         <div className="form-group">
                             <label htmlFor="year">Year</label>
-                            <select id="year" name="year" value={form.year} onChange={handleChange}>
+                            <select
+                                id="year"
+                                name="year"
+                                value={form.year}
+                                onChange={handleChange}
+                            >
                                 <option value={1}>1st Year</option>
                                 <option value={2}>2nd Year</option>
                                 <option value={3}>3rd Year</option>
@@ -126,15 +169,29 @@ function Register({ onJWTLogin, onFirebaseLogin }) {
                             </select>
                         </div>
                     </div>
+
                     <div className="form-group">
-                        <label htmlFor="income">Monthly Budget/Income ($)</label>
-                        <input id="income" name="monthly_income" type="number" value={form.monthly_income} onChange={handleChange} placeholder="e.g. 1000" min="0" step="50" />
+                        <label htmlFor="income">Monthly Budget/Income (₹)</label>
+                        <input
+                            id="income"
+                            name="monthly_income"
+                            type="number"
+                            value={form.monthly_income}
+                            onChange={handleChange}
+                            placeholder="e.g. 15000"
+                            min="0"
+                            step="50"
+                        />
                     </div>
-                    <button type="submit" className="btn btn-primary" disabled={loading}>
-                        {loading ? 'Creating account...' : 'Create Account'}
+
+                    <button
+                        type="submit"
+                        className="btn btn-primary"
+                        disabled={loading}
+                    >
+                        {loading ? "Creating account..." : "Create Account"}
                     </button>
                 </form>
-
                 {/* Divider */}
                 <div style={{ display: 'flex', alignItems: 'center', margin: '20px 0', gap: '10px' }}>
                     <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border)' }} />

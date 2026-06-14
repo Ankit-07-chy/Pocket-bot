@@ -52,10 +52,34 @@ module.exports = function (db, authenticateToken) {
                 context.forecast = pythonDashboard.forecast;
             }
 
-            // Generate AI response with Gemini, fall back to rules
-            let aiResponse = await generateChatResponse(message, context);
+            // Generate AI response by proxying to the Python backend (Groq chatbot)
+            let aiResponse = null;
+            let suggestions = null;
+
+            try {
+                const chatRes = await fetch('http://localhost:8000/api/support/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: String(req.user.id), message, support_type: 'ai' })
+                });
+
+                if (chatRes.ok) {
+                    const chatData = await chatRes.json();
+                    aiResponse = chatData.message;
+                    suggestions = chatData.suggested_actions;
+                } else {
+                    console.warn('Python chatbot API returned non-OK status:', chatRes.status);
+                }
+            } catch (err) {
+                console.error('Failed to proxy chat to Python backend:', err.message);
+            }
+
             if (!aiResponse) {
+                // Fall back to rule-based response
                 aiResponse = generateResponse(message, context);
+            }
+            if (!suggestions) {
+                suggestions = getSuggestions(context);
             }
 
             // Save to chat history
@@ -67,7 +91,7 @@ module.exports = function (db, authenticateToken) {
 
             res.json({
                 response: aiResponse,
-                suggestions: getSuggestions(context)
+                suggestions: suggestions
             });
         } catch (err) {
             console.error('Chat error:', err);
@@ -398,14 +422,14 @@ function generateResponse(message, context) {
         const totalExpenses = context.expenses.reduce((s, e) => s + e.total, 0);
         const dailySpend = totalExpenses / 7;
 
-        let response = `Looking at your spending: you've spent $${totalExpenses.toFixed(2)} in the last 7 days ($${dailySpend.toFixed(2)}/day). `;
+        let response = `Looking at your spending: you've spent ₹${totalExpenses.toFixed(2)} in the last 7 days (₹${dailySpend.toFixed(2)}/day). `;
 
         if (user.daily_budget > 0 && dailySpend > user.daily_budget) {
-            response += `That's above your $${user.daily_budget}/day budget. `;
+            response += `That's above your ₹${user.daily_budget}/day budget. `;
         }
 
-        if (foodSpend > 10) {
-            response += `Your food spending ($${foodSpend.toFixed(2)}/day) is the biggest opportunity to save. Try cooking at home - rice, beans, and eggs make a great $3 meal. `;
+        if (foodSpend > 500) {
+            response += `Your food spending (₹${foodSpend.toFixed(2)}/day) is the biggest opportunity to save. Try cooking at home - rice, beans, and eggs make a great ₹150 meal. `;
         }
 
         response += `Want me to suggest specific budget meals or help you find where to cut back?`;
@@ -414,12 +438,12 @@ function generateResponse(message, context) {
 
     // Food related
     if (msg.includes('food') || msg.includes('eat') || msg.includes('hungry') || msg.includes('meal') || msg.includes('cook')) {
-        if (foodSpend > 10) {
-            return `You're spending about $${foodSpend.toFixed(2)}/day on food. The student sweet spot is $6-8/day. ` +
-                `Here are some quick wins: breakfast (oatmeal + banana = $1.50), lunch (rice + beans = $2.50), ` +
-                `dinner (pasta + sauce = $2.00). That's a full day for $6! Check the Food Recommendations section for more ideas.`;
+        if (foodSpend > 500) {
+            return `You're spending about ₹${foodSpend.toFixed(2)}/day on food. The student sweet spot is ₹300-500/day. ` +
+                `Here are some quick wins: breakfast (oatmeal + banana = ₹75), lunch (rice + beans = ₹125), ` +
+                `dinner (pasta + sauce = ₹100). That's a full day for ₹300! Check the Food Recommendations section for more ideas.`;
         }
-        return `You're doing well with food spending ($${foodSpend.toFixed(2)}/day)! ` +
+        return `You're doing well with food spending (₹${foodSpend.toFixed(2)}/day)! ` +
             `Make sure you're getting enough nutrition though. A balanced meal doesn't have to be expensive - ` +
             `rice, vegetables, and protein (eggs, beans, tofu) cover your basics.`;
     }
@@ -505,7 +529,7 @@ function getSuggestions(context) {
     if (context.sleep.avg < 7) {
         suggestions.push('Help me sleep better');
     }
-    if (context.foodSpend > 8) {
+    if (context.foodSpend > 400) {
         suggestions.push('Show me budget meal ideas');
     }
     if (context.exercise.days_zero >= 3) {
@@ -535,10 +559,10 @@ function generatePersonalizedSuggestions(context) {
     }
 
     // Overspending on food + high stress (stress eating?)
-    if (foodSpend > 10 && stress.avg >= 6) {
+    if (foodSpend > 500 && stress.avg >= 6) {
         suggestions.push({
             type: 'food',
-            text: `Stress eating? Your food spend is $${foodSpend.toFixed(2)}/day when stressed. Try these $3 meal alternatives you might like.`,
+            text: `Stress eating? Your food spend is ₹${foodSpend.toFixed(2)}/day when stressed. Try these ₹150 meal alternatives you might like.`,
             priority: 'medium'
         });
     }

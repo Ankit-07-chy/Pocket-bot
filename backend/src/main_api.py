@@ -595,10 +595,24 @@ async def get_remaining_budget(user_id: str):
 
         remaining = alert_system.get_remaining_budget(budget_plan['plan'], current_expenses)
 
+        # Calculate total remaining and safe daily limit
+        total_budget = float(budget_plan['plan'].get('total_budget', 0.0))
+        total_spent = sum(alert_system._categorize_expenses(current_expenses).values())
+        total_remaining = total_budget - total_spent
+
+        import calendar
+        today = datetime.now()
+        _, last_day = calendar.monthrange(today.year, today.month)
+        remaining_days = max(1, last_day - today.day)
+        safe_daily_limit = total_remaining / remaining_days
+
+        remaining['total_remaining'] = total_remaining
+        remaining['safe_daily_limit'] = safe_daily_limit
+
         return {
             'user_id': user_id,
             'remaining_budget': remaining,
-            'total_budget': budget_plan['plan']['total_budget']
+            'total_budget': total_budget
         }
 
     except HTTPException:
@@ -848,6 +862,20 @@ async def get_dashboard(user_id: str):
 
         # Get remaining budget
         remaining = alert_system.get_remaining_budget(budget_plan['plan'], current_expenses)
+
+        # Calculate total remaining and safe daily limit
+        total_budget = float(budget_plan['plan'].get('total_budget', 0.0))
+        total_spent = sum(alert_system._categorize_expenses(current_expenses).values())
+        total_remaining = total_budget - total_spent
+
+        import calendar
+        today = datetime.now()
+        _, last_day = calendar.monthrange(today.year, today.month)
+        remaining_days = max(1, last_day - today.day)
+        safe_daily_limit = total_remaining / remaining_days
+
+        remaining['total_remaining'] = total_remaining
+        remaining['safe_daily_limit'] = safe_daily_limit
 
         # Get trends
         trends = trend_analyzer.get_monthly_trend(user_id, months=6)

@@ -98,12 +98,12 @@ function Profile() {
                     </div>
                     <div className="form-row">
                         <div className="form-group">
-                            <label htmlFor="prof-income">Monthly Income/Budget ($)</label>
+                            <label htmlFor="prof-income">Monthly Income/Budget (₹)</label>
                             <input id="prof-income" type="number" min="0" step="50" value={form.monthly_income}
                                 onChange={(e) => setForm({ ...form, monthly_income: e.target.value })} />
                         </div>
                         <div className="form-group">
-                            <label htmlFor="prof-daily">Daily Budget ($)</label>
+                            <label htmlFor="prof-daily">Daily Budget (₹)</label>
                             <input id="prof-daily" type="number" min="0" step="1" value={form.daily_budget}
                                 onChange={(e) => setForm({ ...form, daily_budget: e.target.value })} />
                         </div>

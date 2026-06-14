@@ -225,7 +225,7 @@ function checkSpendingAlert(db, userId, date) {
     if (avgDaily > 0 && todayTotal > avgDaily * 1.5) {
         return {
             type: 'overspending',
-            message: `You've spent $${todayTotal.toFixed(2)} today, which is ${Math.round((todayTotal / avgDaily - 1) * 100)}% above your daily average of $${avgDaily.toFixed(2)}.`
+            message: `You've spent ₹${todayTotal.toFixed(2)} today, which is ${Math.round((todayTotal / avgDaily - 1) * 100)}% above your daily average of ₹${avgDaily.toFixed(2)}.`
         };
     }
 

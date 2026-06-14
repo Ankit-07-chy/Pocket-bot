@@ -61,16 +61,16 @@ module.exports = function (db, authenticateToken) {
             let mealQuery = 'SELECT * FROM budget_meals WHERE 1=1';
             const params = [];
 
-            // If user spends > $10/day, show budget meals under $5
-            // If user spends $6-$10/day, show meals matching their range
-            // If user spends < $6/day, encourage healthy eating
-            let maxCost = 5;
-            if (dailyFoodSpend <= 6) {
-                maxCost = 6;
-            } else if (dailyFoodSpend <= 10) {
-                maxCost = 7;
+            // If user spends > ₹500/day, show budget meals under ₹250
+            // If user spends ₹300-₹500/day, show meals matching their range
+            // If user spends < ₹300/day, encourage healthy eating
+            let maxCost = 250;
+            if (dailyFoodSpend <= 300) {
+                maxCost = 300;
+            } else if (dailyFoodSpend <= 500) {
+                maxCost = 350;
             } else {
-                maxCost = 5; // Show cheaper options for overspenders
+                maxCost = 200; // Show cheaper options for overspenders
             }
 
             mealQuery += ' AND cost <= ?';
@@ -90,20 +90,20 @@ module.exports = function (db, authenticateToken) {
 
             // Step 4: Build response with context
             let advice = '';
-            if (dailyFoodSpend > 10) {
-                advice = `You're spending $${dailyFoodSpend.toFixed(2)}/day on food. The recommended budget for students is $6-8/day. Here are some tasty meals that'll save you money:`;
-            } else if (dailyFoodSpend < 6) {
-                advice = `Great job! You're spending $${dailyFoodSpend.toFixed(2)}/day on food, which is within budget. Make sure you're still eating healthy! Here are some nutritious options:`;
+            if (dailyFoodSpend > 500) {
+                advice = `You're spending ₹${dailyFoodSpend.toFixed(2)}/day on food. The recommended budget for students is ₹300-500/day. Here are some tasty meals that'll save you money:`;
+            } else if (dailyFoodSpend < 300) {
+                advice = `Great job! You're spending ₹${dailyFoodSpend.toFixed(2)}/day on food, which is within budget. Make sure you're still eating healthy! Here are some nutritious options:`;
             } else {
-                advice = `You're spending $${dailyFoodSpend.toFixed(2)}/day on food, which is reasonable. Here are some options to keep it balanced:`;
+                advice = `You're spending ₹${dailyFoodSpend.toFixed(2)}/day on food, which is reasonable. Here are some options to keep it balanced:`;
             }
 
             res.json({
                 daily_food_spend: Math.round(dailyFoodSpend * 100) / 100,
-                recommended_budget: { min: 6, max: 8 },
+                recommended_budget: { min: 300, max: 500 },
                 advice,
                 meals,
-                savings_potential: dailyFoodSpend > 8 ? Math.round((dailyFoodSpend - 7) * 30 * 100) / 100 : 0
+                savings_potential: dailyFoodSpend > 400 ? Math.round((dailyFoodSpend - 350) * 30 * 100) / 100 : 0
             });
         } catch (err) {
             console.error('Food recommendations error:', err);
@@ -148,13 +148,13 @@ module.exports = function (db, authenticateToken) {
             res.json({
                 total_7_days: Math.round(totalSpent * 100) / 100,
                 daily_average: Math.round(avgDaily * 100) / 100,
-                recommended_daily: 7, // $6-8 range, middle = $7
+                recommended_daily: 400, // ₹300-500 range, middle = ₹400
                 daily_breakdown: dailySpend,
                 by_meal_type: byMealType,
                 homemade_vs_bought: homemadeStats,
-                tip: avgDaily > 10
+                tip: avgDaily > 500
                     ? 'Try cooking at home more! Homemade meals cost 50-70% less on average.'
-                    : avgDaily < 5
+                    : avgDaily < 200
                         ? 'You\'re under budget - make sure you\'re eating enough!'
                         : 'You\'re in a good range. Keep it up!'
             });

@@ -77,10 +77,10 @@ function FoodPage() {
                         </div>
                         <div className="form-row">
                             <div className="form-group">
-                                <label htmlFor="food-cost">Cost ($)</label>
+                                <label htmlFor="food-cost">Cost (₹)</label>
                                 <input id="food-cost" type="number" step="0.01" min="0" value={form.cost}
                                     onChange={(e) => setForm({ ...form, cost: e.target.value })}
-                                    placeholder="5.00" />
+                                    placeholder="200" />
                             </div>
                             <div className="form-group">
                                 <label htmlFor="food-calories">Calories (optional)</label>
@@ -110,7 +110,7 @@ function FoodPage() {
                                 <p style={{ fontSize: '0.95rem', marginBottom: '10px' }}>{recommendations.advice}</p>
                                 {recommendations.savings_potential > 0 && (
                                     <div className="alert alert-info">
-                                        💡 You could save ~${recommendations.savings_potential.toFixed(2)}/month by adjusting your food spending!
+                                        💡 You could save ~₹{recommendations.savings_potential.toFixed(2)}/month by adjusting your food spending!
                                     </div>
                                 )}
                             </div>
@@ -120,7 +120,7 @@ function FoodPage() {
                                     <div className="meal-card" key={meal.id}>
                                         <h4>{meal.name}</h4>
                                         <div className="meal-meta">
-                                            <span>💰 ${meal.cost.toFixed(2)}</span>
+                                            <span>💰 ₹{meal.cost.toFixed(2)}</span>
                                             <span>🔥 {meal.calories} cal</span>
                                             <span>⏱️ {meal.prep_time_minutes} min</span>
                                             {meal.is_vegetarian ? <span>🥬 Vegetarian</span> : null}
@@ -146,15 +146,15 @@ function FoodPage() {
                 <div>
                     <div className="stats-grid">
                         <div className="stat-card">
-                            <div className="stat-value">${analysis.daily_average.toFixed(2)}</div>
+                            <div className="stat-value">₹{analysis.daily_average.toFixed(2)}</div>
                             <div className="stat-label">Daily food spend</div>
                         </div>
                         <div className="stat-card">
-                            <div className="stat-value">${analysis.total_7_days.toFixed(2)}</div>
+                            <div className="stat-value">₹{analysis.total_7_days.toFixed(2)}</div>
                             <div className="stat-label">Last 7 days total</div>
                         </div>
                         <div className="stat-card">
-                            <div className="stat-value">${analysis.recommended_daily}</div>
+                            <div className="stat-value">₹{analysis.recommended_daily}</div>
                             <div className="stat-label">Recommended daily</div>
                         </div>
                     </div>
@@ -171,7 +171,7 @@ function FoodPage() {
                                     {analysis.by_meal_type.map(m => (
                                         <tr key={m.meal_type}>
                                             <td style={{ textTransform: 'capitalize' }}>{m.meal_type}</td>
-                                            <td>${m.avg_cost?.toFixed(2)}</td>
+                                            <td>₹{m.avg_cost?.toFixed(2)}</td>
                                             <td>{m.count}</td>
                                         </tr>
                                     ))}
