@@ -37,8 +37,8 @@ def setup_project_paths():
 
 # Setup paths before any other imports
 PROJECT_ROOT = setup_project_paths()
-print(f"✅ Project Root: {PROJECT_ROOT}")
-print(f"✅ Python Path: {sys.path[0]}")
+print(f"[OK] Project Root: {PROJECT_ROOT}")
+print(f"[OK] Python Path: {sys.path[0]}")
 
 # ==================== CORE IMPORTS ====================
 from fastapi import FastAPI, HTTPException, Query
@@ -72,7 +72,7 @@ try:
         RemainingBudgetResponse, DashboardResponse,
         HealthCheckResponse, ErrorResponse, ExpenseCreate
     )
-    print("✅ Expense Management imports successful")
+    print("[OK] Expense Management imports successful")
 
     firebase_service = FirebaseExpenseService()
     expense_initializer = ExpenseInitializer()
@@ -83,7 +83,7 @@ try:
     planner = BudgetPlanner(analyzer)
 
 except ImportError as e:
-    print(f"⚠ First import attempt failed: {e}")
+    print(f"[WARN] First import attempt failed: {e}")
 
     try:
         expense_mgmt_path = PROJECT_ROOT / 'backend' / 'src' / 'expense_management'
@@ -106,7 +106,7 @@ except ImportError as e:
             RemainingBudgetResponse, DashboardResponse,
             HealthCheckResponse, ErrorResponse, ExpenseCreate
         )
-        print("✅ Expense Management imports successful (direct path)")
+        print("[OK] Expense Management imports successful (direct path)")
 
         firebase_service = FirebaseExpenseService()
         expense_initializer = ExpenseInitializer()
@@ -117,7 +117,7 @@ except ImportError as e:
         planner = BudgetPlanner(analyzer)
 
     except ImportError as e2:
-        print(f"⚠ Expense Management services unavailable: {e2}")
+        print(f"[WARN] Expense Management services unavailable: {e2}")
 
         class MockService:
             def __init__(self, *args, **kwargs): pass
@@ -175,9 +175,9 @@ try:
     from personalised_support.api_routes import router as support_router
     from personalised_support import chat_manager
     _llm_status = "operational" if chat_manager.ai_chatbot.llm else "limited (no LLM key)"
-    print(f"✅ Personalised Support imported — AI chatbot: {_llm_status}")
+    print(f"[OK] Personalised Support imported — AI chatbot: {_llm_status}")
 except ImportError as e:
-    print(f"⚠ Personalised Support not available: {e}")
+    print(f"[WARN] Personalised Support not available: {e}")
     support_router = None
     chat_manager = None
 
@@ -206,9 +206,9 @@ app.add_middleware(
 # Registered here so all 16 endpoints appear in /docs alongside the rest.
 if support_router:
     app.include_router(support_router)
-    print("✅ Support router attached — 16 endpoints at /api/support/*")
+    print("[OK] Support router attached — 16 endpoints at /api/support/*")
 else:
-    print("⚠ Support router not attached (import failed above)")
+    print("[WARN] Support router not attached (import failed above)")
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
 # ║                         SYSTEM HEALTH & STATUS                                  ║
@@ -384,7 +384,7 @@ async def onboard_user(request: OnboardUserRequest):
                 )
             except Exception as ctx_err:
                 # Non-fatal — chatbot will reload context on next message
-                print(f"⚠ Could not pre-load chatbot context: {ctx_err}")
+                print(f"[WARN] Could not pre-load chatbot context: {ctx_err}")
 
         return result
 
