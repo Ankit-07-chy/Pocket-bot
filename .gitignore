@@ -17,3 +17,12 @@ __pycache__/
 
 # env keys 
 .env
+
+# files to be ignored
+.claude/
+populate_db.py
+query_db.py
+sample_queries.sql 
+test_data_integrity.py 
+test_endpoints.py 
+verify_db.py 
