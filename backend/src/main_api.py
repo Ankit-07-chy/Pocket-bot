@@ -1,6 +1,6 @@
 """
 FastAPI application - Poket Bot
-Production-ready version with Expense Management & Personalized Support
+Expense Management & Personalized Support 
 Organized by feature sections for better maintainability
 """
 
@@ -65,6 +65,7 @@ try:
     from backend.src.expense_management.budget_planner import BudgetPlanner
     from backend.src.expense_management.schemas import (
         InitializeUserRequest, InitializeUserResponse,
+        OnboardUserRequest, OnboardUserResponse,
         CustomBudgetRequest, BudgetPlanResponse,
         MonthlyTrendResponse, CategoryTrendResponse,
         ForecastResponse, AlertResponse,
@@ -98,6 +99,7 @@ except ImportError as e:
         from budget_planner import BudgetPlanner
         from schemas import (
             InitializeUserRequest, InitializeUserResponse,
+            OnboardUserRequest, OnboardUserResponse,
             CustomBudgetRequest, BudgetPlanResponse,
             MonthlyTrendResponse, CategoryTrendResponse,
             ForecastResponse, AlertResponse,
@@ -133,6 +135,7 @@ except ImportError as e:
         try:
             from schemas import (
                 InitializeUserRequest, InitializeUserResponse,
+                OnboardUserRequest, OnboardUserResponse,
                 CustomBudgetRequest, BudgetPlanResponse,
                 MonthlyTrendResponse, CategoryTrendResponse,
                 ForecastResponse, AlertResponse,
@@ -142,6 +145,13 @@ except ImportError as e:
         except ImportError:
             class InitializeUserRequest(BaseModel): user_id: str; current_month_budget: float
             class InitializeUserResponse(BaseModel): success: bool; user_id: str
+            class OnboardUserRequest(BaseModel):
+                user_id: str
+                last_month_total: float
+                last_month_category_expenses: dict
+                this_month_budget: float
+                savings_target: float = 0.0
+            class OnboardUserResponse(BaseModel): success: bool; user_id: str
             class CustomBudgetRequest(BaseModel): user_id: str; custom_budget: float; savings_target: float = 0
             class HealthCheckResponse(BaseModel): status: str; timestamp: str; version: str
             class ExpenseCreate(BaseModel): amount: float; category: str; description: str = ""
@@ -204,6 +214,7 @@ else:
 # ║                         SYSTEM HEALTH & STATUS                                  ║
 # ╚════════════════════════════════════════════════════════════════════════════════╝
 
+# system health
 @app.get("/health", response_model=HealthCheckResponse)
 async def health_check():
     """System health check endpoint"""
@@ -215,6 +226,7 @@ async def health_check():
         "services_initialized": expense_initializer is not None
     }
 
+# root endpoint
 @app.get("/")
 async def root():
     """Root endpoint with API information"""
@@ -236,6 +248,7 @@ async def root():
         }
     }
 
+# check status
 @app.get("/api/v1/status")
 async def system_status():
     """Get comprehensive system status and component information"""
@@ -298,6 +311,89 @@ async def initialize_user(request: InitializeUserRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/v1/onboard")
+async def onboard_user(request: OnboardUserRequest):
+    """
+    First-time user onboarding endpoint.
+
+    Called right after registration when the user provides:
+    - Last month's total expense
+    - Last month's category-wise expense breakdown
+    - This month's intended budget
+
+    The system:
+    1. Persists last month's expenses to SQLite (so forecaster/trend analyzer work from day 1)
+    2. Computes a category-wise budget plan for this month based on the supplied pattern
+    3. Saves the budget plan to SQLite
+    4. Returns the full breakdown so the frontend can show it immediately
+
+    The chatbot will also automatically pick up this data on the next /api/support/chat call.
+
+    Example request body:
+    ```json
+    {
+      "user_id": "42",
+      "last_month_total": 12000,
+      "last_month_category_expenses": {
+        "food": 4000,
+        "transport": 1500,
+        "entertainment": 2000,
+        "education": 1500,
+        "health": 500,
+        "utilities": 1000,
+        "others": 1500
+      },
+      "this_month_budget": 11000,
+      "savings_target": 1000
+    }
+    ```
+    """
+    try:
+        if expense_initializer is None:
+            raise HTTPException(status_code=503, detail="ExpenseInitializer service not available")
+
+        result = expense_initializer.onboard_user_with_expense_data(
+            user_id=request.user_id,
+            last_month_total=request.last_month_total,
+            last_month_category_expenses=request.last_month_category_expenses,
+            this_month_budget=request.this_month_budget,
+            savings_target=request.savings_target or 0.0,
+        )
+
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error", "Onboarding failed"))
+
+        # Immediately push the financial context to the chatbot memory so the
+        # very first chat message is already personalised.
+        if chat_manager is not None:
+            try:
+                budget_plan = result.get("budget_plan", {})
+                summary = result.get("summary", {})
+                chat_manager.ai_chatbot.set_user_context(
+                    request.user_id,
+                    {
+                        "current_month_total": 0.0,
+                        "previous_month_total": request.last_month_total,
+                        "budget": request.this_month_budget,
+                        "budget_status": "within budget (0% used)",
+                        "category_spending": {},
+                        "biggest_category": summary.get("top_category"),
+                        "trend": "not enough history",
+                        "category_budget_breakdown": summary.get("category_budget_breakdown", {}),
+                    },
+                )
+            except Exception as ctx_err:
+                # Non-fatal — chatbot will reload context on next message
+                print(f"⚠ Could not pre-load chatbot context: {ctx_err}")
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/v1/reinitialize-budget")
 async def reinitialize_with_custom_budget(request: CustomBudgetRequest):
     """Reinitialize budget with custom amount and savings target"""
@@ -323,7 +419,7 @@ async def reinitialize_with_custom_budget(request: CustomBudgetRequest):
 
 # ==================== EXPENSE TRACKING ====================
 
-@app.post("/api/v1/expenses")
+@app.post("/api/v1/expenses/{user_id}")
 async def create_expense(user_id: str, expense: ExpenseCreate):
     """Create a new expense record"""
     try:
@@ -536,8 +632,8 @@ async def get_category_trends(user_id: str, category: str, months: int = Query(6
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/v1/trends/compare")
-async def compare_months(user_id: str, month1: str, month2: str):
+@app.get("/api/v1/trends/compare/{user_id}")
+async def compare_months(user_id: str, month1: str = Query(...), month2: str = Query(...)):
     """Compare spending between two months (format: YYYY-MM)"""
     try:
         if trend_analyzer is None:
