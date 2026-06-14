@@ -72,7 +72,8 @@ try:
         MonthlyTrendResponse, CategoryTrendResponse,
         ForecastResponse, AlertResponse,
         RemainingBudgetResponse, DashboardResponse,
-        HealthCheckResponse, ErrorResponse, ExpenseCreate
+        HealthCheckResponse, ErrorResponse, ExpenseCreate,
+        OnboardUserRequest, OnboardUserResponse
     )
     print("[OK] Expense Management imports successful")
 
@@ -92,20 +93,21 @@ except ImportError as e:
         if str(expense_mgmt_path) not in sys.path:
             sys.path.insert(0, str(expense_mgmt_path))
 
-        from expense_management.initialize_boundary import ExpenseInitializer
-        from expense_management.alert_system import AlertSystem
-        from expense_management.trend_analyzer import TrendAnalyzer
-        from expense_management.forecaster import ExpenseForecaster
-        from expense_management.firebase_service import FirebaseExpenseService
-        from expense_management.expense_analyzer import ExpenseAnalyzer
-        from expense_management.budget_planner import BudgetPlanner
-        from expense_management.schemas import (
+        from backend.src.expense_management.initialize_boundary import ExpenseInitializer
+        from backend.src.expense_management.alert_system import AlertSystem
+        from backend.src.expense_management.trend_analyzer import TrendAnalyzer
+        from backend.src.expense_management.forecaster import ExpenseForecaster
+        from backend.src.expense_management.firebase_service import FirebaseExpenseService
+        from backend.src.expense_management.expense_analyzer import ExpenseAnalyzer
+        from backend.src.expense_management.budget_planner import BudgetPlanner
+        from backend.src.expense_management.schemas import (
             InitializeUserRequest, InitializeUserResponse,
             CustomBudgetRequest, BudgetPlanResponse,
             MonthlyTrendResponse, CategoryTrendResponse,
             ForecastResponse, AlertResponse,
             RemainingBudgetResponse, DashboardResponse,
-            HealthCheckResponse, ErrorResponse, ExpenseCreate
+            HealthCheckResponse, ErrorResponse, ExpenseCreate,
+            OnboardUserRequest, OnboardUserResponse
         )
         print("[OK] Expense Management imports successful (direct path)")
 
@@ -141,7 +143,8 @@ except ImportError as e:
                 MonthlyTrendResponse, CategoryTrendResponse,
                 ForecastResponse, AlertResponse,
                 RemainingBudgetResponse, DashboardResponse,
-                HealthCheckResponse, ErrorResponse, ExpenseCreate
+                HealthCheckResponse, ErrorResponse, ExpenseCreate,
+                OnboardUserRequest, OnboardUserResponse
             )
         except ImportError:
             class InitializeUserRequest(BaseModel): user_id: str; current_month_budget: float
@@ -149,6 +152,18 @@ except ImportError as e:
             class CustomBudgetRequest(BaseModel): user_id: str; custom_budget: float; savings_target: float = 0
             class HealthCheckResponse(BaseModel): status: str; timestamp: str; version: str
             class ExpenseCreate(BaseModel): amount: float; category: str; description: str = ""
+            class OnboardUserRequest(BaseModel):
+                user_id: str
+                last_month_total: float
+                last_month_category_expenses: dict
+                this_month_budget: float
+                savings_target: float = 0.0
+            class OnboardUserResponse(BaseModel):
+                user_id: str
+                success: bool
+                budget_plan: dict
+                summary: dict
+                error: Optional[str] = None
             BudgetPlanResponse = dict
             MonthlyTrendResponse = dict
             CategoryTrendResponse = dict
