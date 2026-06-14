@@ -1,7 +1,7 @@
 node_modules/
 client/node_modules/
 client/build/
-database/*.db
+# database/*.db
 .env
 
 # Firebase service account key (NEVER commit this)
