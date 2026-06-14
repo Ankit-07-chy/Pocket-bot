@@ -61,6 +61,38 @@ class InitializeUserResponse(BaseModel):
     error: Optional[str] = None
 
 
+class OnboardUserRequest(BaseModel):
+    """
+    Request model for first-time user onboarding.
+
+    Collected at registration/login when the user tells us their
+    last month's spending and this month's budget so the system can
+    immediately produce a category-wise budget plan.
+    """
+    user_id: str = Field(..., description="User ID (integer or Firebase UID as string)")
+    last_month_total: float = Field(..., gt=0, description="Total amount spent last month")
+    last_month_category_expenses: Dict[str, float] = Field(
+        ...,
+        description=(
+            "Category-wise breakdown of last month's spending. "
+            "Keys must be one of: food, transport, entertainment, "
+            "education, health, utilities, others. "
+            "Example: {\"food\": 3000, \"transport\": 800}"
+        )
+    )
+    this_month_budget: float = Field(..., gt=0, description="Total budget the user wants for this month")
+    savings_target: Optional[float] = Field(0.0, ge=0, description="Optional savings target amount")
+
+
+class OnboardUserResponse(BaseModel):
+    """Response model for user onboarding"""
+    user_id: str
+    success: bool
+    budget_plan: Dict  # full optimized plan with category breakdown
+    summary: Dict      # quick-glance numbers
+    error: Optional[str] = None
+
+
 class CustomBudgetRequest(BaseModel):
     """Request model for custom budget"""
     user_id: str

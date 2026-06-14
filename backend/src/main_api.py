@@ -11,7 +11,6 @@ from datetime import datetime
 from typing import List, Optional
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from pathlib import Path
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -167,7 +166,9 @@ support_router = None
 chat_manager = None
 
 try:
+    # pyrefly: ignore [missing-import]
     from personalised_support.api_routes import router as support_router
+    # pyrefly: ignore [missing-import]
     from personalised_support import chat_manager
     _llm_status = "operational" if chat_manager.ai_chatbot.llm else "limited (no LLM key)"
     print(f"✅ Personalised Support imported — AI chatbot: {_llm_status}")
@@ -176,8 +177,20 @@ except ImportError as e:
     support_router = None
     chat_manager = None
 
-# ==================== FIREBASE INITIALIZATION (removed — using SQLite) ====================
-firebase_initialized = False  # kept for status endpoint compatibility
+# ==================== FIREBASE INITIALIZATION ====================
+import firebase_admin
+from firebase_admin import db
+
+firebase_initialized = False
+try:
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(options={
+            'databaseURL': os.getenv('FIREBASE_DATABASE_URL', 'https://your-database.firebaseio.com/')
+        })
+    firebase_initialized = True
+    print(f"✅ Firebase initialized")
+except Exception as e:
+    print(f"⚠ Firebase initialization: {e}")
 
 # ==================== FASTAPI APPLICATION SETUP ====================
 app = FastAPI(
@@ -216,7 +229,7 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "version": "2.0.0",
-        "database": "sqlite",
+        "firebase_initialized": firebase_initialized,
         "services_initialized": expense_initializer is not None
     }
 
@@ -249,9 +262,9 @@ async def system_status():
         "timestamp": datetime.now().isoformat(),
         "version": "2.0.0",
         "components": {
-            "database": {
-                "status": "sqlite",
-                "available": True
+            "firebase": {
+                "status": "initialized" if firebase_initialized else "unavailable",
+                "available": firebase_initialized
             },
             "expense_management": {
                 "analyzer": "available" if analyzer is not None else "unavailable",
@@ -333,20 +346,20 @@ async def create_expense(user_id: str, expense: ExpenseCreate):
     """Create a new expense record"""
     try:
         if firebase_service is None:
-            raise HTTPException(status_code=503, detail="Expense service not available")
+            raise HTTPException(status_code=503, detail="Firebase service not available")
 
-        expense_id = firebase_service.add_expense(
-            user_id=user_id,
-            amount=expense.amount,
-            category=expense.category,
-            description=expense.description or "",
-            date=expense.date,
-        )
+        expense_ref = firebase_service.db.reference(f'users/{user_id}/expenses')
+        new_expense = {
+            **expense.dict(),
+            'created_at': datetime.now().isoformat()
+        }
+        new_key = expense_ref.push().key
+        expense_ref.child(new_key).set(new_expense)
 
         return {
             'success': True,
-            'expense_id': expense_id,
-            'data': {**expense.dict(), 'created_at': datetime.now().isoformat()}
+            'expense_id': new_key,
+            'data': new_expense
         }
 
     except HTTPException:
@@ -379,9 +392,10 @@ async def get_budget_plan(user_id: str):
     """Retrieve the current budget plan for a user"""
     try:
         if firebase_service is None:
-            raise HTTPException(status_code=503, detail="Expense service not available")
+            raise HTTPException(status_code=503, detail="Firebase service not available")
 
-        plan = firebase_service.get_budget_plan(user_id)
+        ref = firebase_service.db.reference(f'users/{user_id}/budget_plan')
+        plan = ref.get()
 
         if not plan:
             raise HTTPException(status_code=404, detail="Budget plan not found")
@@ -403,19 +417,18 @@ async def get_remaining_budget(user_id: str):
         if firebase_service is None or alert_system is None:
             raise HTTPException(status_code=503, detail="Service not available")
 
-        budget_data = firebase_service.get_budget_plan(user_id)
+        budget_plan = firebase_service.db.reference(f'users/{user_id}/budget_plan').get()
         current_expenses = firebase_service.get_current_month_expenses(user_id)
 
-        if not budget_data:
+        if not budget_plan:
             raise HTTPException(status_code=404, detail="Budget plan not found")
 
-        plan = budget_data.get('plan', budget_data)
-        remaining = alert_system.get_remaining_budget(plan, current_expenses)
+        remaining = alert_system.get_remaining_budget(budget_plan['plan'], current_expenses)
 
         return {
             'user_id': user_id,
             'remaining_budget': remaining,
-            'total_budget': plan.get('total_budget', 0)
+            'total_budget': budget_plan['plan']['total_budget']
         }
 
     except HTTPException:
@@ -432,20 +445,18 @@ async def get_user_alerts(user_id: str):
         if firebase_service is None or alert_system is None:
             raise HTTPException(status_code=503, detail="Service not available")
 
-        budget_data = firebase_service.get_budget_plan(user_id)
+        budget_plan = firebase_service.db.reference(f'users/{user_id}/budget_plan').get()
         current_expenses = firebase_service.get_current_month_expenses(user_id)
 
-        if not budget_data:
+        if not budget_plan:
             raise HTTPException(status_code=404, detail="Budget plan not found")
-
-        plan = budget_data.get('plan', budget_data)
 
         # Check for alerts
         category_alerts = alert_system.check_category_overspending(
-            user_id, plan, current_expenses
+            user_id, budget_plan['plan'], current_expenses
         )
         total_alert = alert_system.check_total_budget_status(
-            user_id, plan, current_expenses
+            user_id, budget_plan['plan'], current_expenses
         )
 
         alerts = [alert.to_dict() for alert in category_alerts]
@@ -648,23 +659,21 @@ async def get_dashboard(user_id: str):
             raise HTTPException(status_code=503, detail="One or more services not available")
 
         # Fetch all data
-        budget_data = firebase_service.get_budget_plan(user_id)
+        budget_plan = firebase_service.db.reference(f'users/{user_id}/budget_plan').get()
         current_expenses = firebase_service.get_current_month_expenses(user_id)
         previous_expenses = firebase_service.get_previous_month_expenses(user_id)
 
-        if not budget_data:
+        if not budget_plan:
             raise HTTPException(status_code=404, detail="User not initialized")
-
-        plan = budget_data.get('plan', budget_data)
 
         # Get alerts
         category_alerts = alert_system.check_category_overspending(
-            user_id, plan, current_expenses
+            user_id, budget_plan['plan'], current_expenses
         )
         alerts = [alert.to_dict() for alert in category_alerts]
 
         # Get remaining budget
-        remaining = alert_system.get_remaining_budget(plan, current_expenses)
+        remaining = alert_system.get_remaining_budget(budget_plan['plan'], current_expenses)
 
         # Get trends
         trends = trend_analyzer.get_monthly_trend(user_id, months=6)
@@ -684,7 +693,7 @@ async def get_dashboard(user_id: str):
             'generated_at': datetime.now().isoformat(),
             'previous_month_summary': prev_analysis,
             'current_month_summary': curr_analysis,
-            'budget_plan': plan,
+            'budget_plan': budget_plan.get('plan', budget_plan),
             'alerts': alerts,
             'alert_count': len(alerts),
             'remaining_budget': remaining,
