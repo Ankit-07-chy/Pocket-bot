@@ -2,6 +2,8 @@ node_modules/
 client/node_modules/
 client/build/
 # database/*.db
+database/pocketbuddy.db-shm
+database/pocketbuddy.db-wal
 .env
 
 # Firebase service account key (NEVER commit this)
@@ -10,10 +12,12 @@ server/firebase/serviceAccountKey.json
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.pyc
-
+.vscode
+.pytest_cache
 
 # venv
 .venv
+tests 
 
 # env keys 
 .env
