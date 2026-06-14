@@ -47,7 +47,21 @@ print(f"[OK] Python Path: {sys.path[0]}")
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Literal
+
+
+# ── Burnout: health check-in request schema ──────────────────────────────────
+class HealthLogCreate(BaseModel):
+    date: Optional[str] = None                          # defaults to today
+    sleep_hours: float = Field(7.0, ge=0, le=24)
+    stress_level: int = Field(5, ge=1, le=10)
+    mood: Literal["happy", "neutral", "anxious", "sad", "overwhelmed"] = "neutral"
+    study_hours: float = Field(0.0, ge=0, le=24)
+    exercise_minutes: int = Field(0, ge=0, le=300)
+    social_activity: int = Field(3, ge=1, le=10)
+    energy_level: int = Field(5, ge=1, le=10)
+    notes: str = ""
 
 # ==================== EXPENSE MANAGEMENT IMPORTS ====================
 expense_initializer = None
@@ -173,6 +187,32 @@ except ImportError as e:
             DashboardResponse = dict
             ErrorResponse = dict
 
+# ==================== BURNOUT PREDICTION IMPORTS ====================
+burnout_predictor = None
+
+try:
+    from burnout_prediction.burnout_predictor import BurnoutPredictor
+    from burnout_prediction.model_store import resolve_model_dir, delete_user_models
+    from burnout_prediction.schemas import BurnoutPredictionResponse
+
+    # Locate pocketbuddy.db the same way sqlite_service.py does
+    def _find_db_path() -> str:
+        here = Path(__file__).resolve()
+        for _ in range(6):
+            candidate = here / "database" / "pocketbuddy.db"
+            if candidate.exists():
+                return str(candidate)
+            here = here.parent
+        import os as _os
+        return _os.getenv("SQLITE_DB_PATH", str(PROJECT_ROOT / "database" / "pocketbuddy.db"))
+
+    _DB_PATH = _find_db_path()
+    burnout_predictor = BurnoutPredictor(db_path=_DB_PATH)
+    print(f"[OK] Burnout Predictor initialised — db: {_DB_PATH}")
+except ImportError as e:
+    print(f"[WARN] Burnout Prediction not available: {e}")
+    burnout_predictor = None
+
 # ==================== PERSONALISED SUPPORT IMPORTS ====================
 # The personalised_support package lives at backend/src/personalised_support/.
 # backend/src is already on sys.path from setup_project_paths(), so we import
@@ -291,6 +331,16 @@ async def system_status():
             "personalized_support": {
                 "status": "available" if support_router is not None else "unavailable",
                 "chat_manager": "initialized" if chat_manager is not None else "unavailable"
+            },
+            "burnout_prediction": {
+                "status": "available" if burnout_predictor is not None else "unavailable",
+                "endpoints": [
+                    "POST /api/v1/burnout/checkin/{user_id}",
+                    "GET  /api/v1/burnout/predict/{user_id}",
+                    "GET  /api/v1/burnout/history/{user_id}",
+                    "POST /api/v1/burnout/save-snapshot/{user_id}",
+                    "DELETE /api/v1/burnout/models/{user_id}",
+                ] if burnout_predictor is not None else []
             }
         },
         "environment": {
@@ -803,6 +853,243 @@ async def get_dashboard(user_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
+# ║                        BURNOUT PREDICTION FEATURE                                ║
+# ║    Health check-in logging, burnout scoring, history, model management           ║
+# ╚════════════════════════════════════════════════════════════════════════════════╝
+
+import sqlite3 as _sqlite3
+
+def _get_db_conn() -> _sqlite3.Connection:
+    """Open a WAL-mode SQLite connection to pocketbuddy.db."""
+    conn = _sqlite3.connect(_DB_PATH if burnout_predictor else str(PROJECT_ROOT / "database" / "pocketbuddy.db"))
+    conn.row_factory = _sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
+# ── 1. Log a daily health check-in ───────────────────────────────────────────
+
+@app.post("/api/v1/burnout/checkin/{user_id}")
+async def log_health_checkin(user_id: int, log: HealthLogCreate):
+    """
+    Save or replace today's health check-in for the user.
+
+    This is the data that feeds the burnout prediction model:
+    sleep, stress, mood, exercise, energy, social activity.
+
+    The table has a UNIQUE(user_id, date) constraint so calling this
+    endpoint twice on the same day just overwrites the earlier entry.
+    """
+    try:
+        checkin_date = log.date or datetime.now().strftime("%Y-%m-%d")
+        with _get_db_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO health_logs
+                    (user_id, date, sleep_hours, stress_level, mood,
+                     study_hours, exercise_minutes, social_activity,
+                     energy_level, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, date) DO UPDATE SET
+                    sleep_hours      = excluded.sleep_hours,
+                    stress_level     = excluded.stress_level,
+                    mood             = excluded.mood,
+                    study_hours      = excluded.study_hours,
+                    exercise_minutes = excluded.exercise_minutes,
+                    social_activity  = excluded.social_activity,
+                    energy_level     = excluded.energy_level,
+                    notes            = excluded.notes
+                """,
+                (
+                    user_id, checkin_date,
+                    log.sleep_hours, log.stress_level, log.mood,
+                    log.study_hours, log.exercise_minutes,
+                    log.social_activity, log.energy_level, log.notes,
+                ),
+            )
+            conn.commit()
+        return {
+            "success": True,
+            "user_id": user_id,
+            "date": checkin_date,
+            "message": "Health check-in saved. Call /api/v1/burnout/predict/{user_id} to get your burnout score.",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── 2. Get burnout prediction ─────────────────────────────────────────────────
+
+@app.get("/api/v1/burnout/predict/{user_id}")
+async def get_burnout_prediction(user_id: int):
+    """
+    Run the burnout prediction pipeline for a user and return the full result.
+
+    Strategy is auto-selected based on days of health check-in data:
+      • < 4 days  → Rule-based  (confidence 35–55%)
+      • 4–6 days  → Hybrid      (confidence 55–65%)
+      • ≥ 7 days  → ML / SGD    (confidence 65–92%)
+
+    Response includes:
+      - financial_score, mental_score, combined_score  (0.0–1.0)
+      - alert_level:  good | moderate | high | crisis
+      - top_risk_factors: up to 5 human-readable reasons
+      - recommendations: up to 6 personalised action items
+      - strategy_used, confidence, days_of_data, next_upgrade_in_days
+    """
+    if burnout_predictor is None:
+        raise HTTPException(status_code=503, detail="Burnout Predictor service not available")
+    try:
+        result = burnout_predictor.predict(user_id=user_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── 3. Get recent burnout history ─────────────────────────────────────────────
+
+@app.get("/api/v1/burnout/history/{user_id}")
+async def get_burnout_history(
+    user_id: int,
+    days: int = Query(30, ge=1, le=90, description="How many past days to return"),
+):
+    """
+    Return a list of past burnout scores stored in the burnout_scores table,
+    along with a simple trend summary (improving / worsening).
+
+    Each entry reflects the stored snapshot — not a live re-calculation.
+    To record a new snapshot, call /predict and persist from the frontend,
+    or use the /checkin endpoint which auto-saves to health_logs.
+    """
+    try:
+        cutoff = (datetime.now().date() - __import__("datetime").timedelta(days=days)).isoformat()
+        with _get_db_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT date, score, alert_level,
+                       current_sleep, current_stress, current_exercise
+                FROM burnout_scores
+                WHERE user_id = ? AND date >= ?
+                ORDER BY date ASC
+                """,
+                (user_id, cutoff),
+            ).fetchall()
+
+        history = [dict(r) for r in rows]
+        if not history:
+            return {
+                "user_id": user_id,
+                "days_requested": days,
+                "history": [],
+                "summary": {"message": "No burnout history found. Start logging daily check-ins."},
+            }
+
+        scores = [h["score"] for h in history]
+        avg_score = round(sum(scores) / len(scores), 1)
+        improving = len(scores) >= 2 and scores[-1] < scores[0]
+
+        return {
+            "user_id": user_id,
+            "days_requested": days,
+            "history": history,
+            "summary": {
+                "entries": len(history),
+                "average_score": avg_score,
+                "latest_score": scores[-1],
+                "improving": improving,
+                "worst_day": history[scores.index(max(scores))]["date"],
+                "best_day": history[scores.index(min(scores))]["date"],
+            },
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── 4. Save a prediction snapshot to burnout_scores ──────────────────────────
+
+@app.post("/api/v1/burnout/save-snapshot/{user_id}")
+async def save_burnout_snapshot(user_id: int):
+    """
+    Run the prediction AND persist the result to the burnout_scores table.
+
+    Call this after a daily check-in so the history endpoint has data to return.
+    Combines /predict + DB write in one step for convenience.
+    """
+    if burnout_predictor is None:
+        raise HTTPException(status_code=503, detail="Burnout Predictor service not available")
+    try:
+        result = burnout_predictor.predict(user_id=user_id)
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        fin_details = result.financial_details or {}
+        men_details = result.mental_details or {}
+
+        with _get_db_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO burnout_scores
+                    (user_id, date, baseline_sleep, baseline_stress, baseline_exercise,
+                     current_sleep, current_stress, current_exercise, score, alert_level)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, date) DO UPDATE SET
+                    score       = excluded.score,
+                    alert_level = excluded.alert_level,
+                    current_sleep    = excluded.current_sleep,
+                    current_stress   = excluded.current_stress,
+                    current_exercise = excluded.current_exercise
+                """,
+                (
+                    user_id, today,
+                    7.0,   # baseline_sleep (default — not stored separately)
+                    5.0,   # baseline_stress
+                    30.0,  # baseline_exercise
+                    men_details.get("sleep_avg_7d", 0.0),
+                    men_details.get("stress_avg_7d", 0.0),
+                    0.0,   # current_exercise (not in mental_details directly)
+                    round(result.combined_score * 100),   # store as 0-100 int
+                    result.alert_level.value,
+                ),
+            )
+            conn.commit()
+
+        return {
+            "success": True,
+            "user_id": user_id,
+            "date": today,
+            "snapshot_saved": True,
+            "prediction": result,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── 5. Delete a user's trained ML models (reset) ─────────────────────────────
+
+@app.delete("/api/v1/burnout/models/{user_id}")
+async def delete_burnout_models(user_id: int):
+    """
+    Delete the per-user trained ML model files (.pkl).
+
+    After deletion the system automatically falls back to Rule-Based,
+    then rebuilds the model once the user has ≥ 7 days of check-ins again.
+    Useful when a user wants to reset their prediction baseline.
+    """
+    if burnout_predictor is None:
+        raise HTTPException(status_code=503, detail="Burnout Predictor service not available")
+    try:
+        from burnout_prediction.model_store import delete_user_models, resolve_model_dir
+        deleted = delete_user_models(resolve_model_dir(), user_id)
+        return {
+            "success": True,
+            "user_id": user_id,
+            "models_deleted": deleted,
+            "message": "Models deleted. The system will use Rule-Based strategy until 7+ check-ins are available.",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ╔════════════════════════════════════════════════════════════════════════════════╗
 # ║                           ERROR HANDLING                                         ║
 # ╚════════════════════════════════════════════════════════════════════════════════╝
 
@@ -858,6 +1145,7 @@ if __name__ == "__main__":
     print(f"   • Trend Analysis     : {'✓' if trend_analyzer else '✗'}")
     print(f"   • Forecasting        : {'✓' if forecaster else '✗'}")
     print(f"   • Personalised Chat  : {'✓' if support_router else '✗'}")
+    print(f"   • Burnout Prediction : {'✓' if burnout_predictor else '✗'}")
     if support_router:
         print("\n📡 Support endpoints (prefix: /api/support):")
         support_paths = [
