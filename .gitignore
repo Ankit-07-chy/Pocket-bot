@@ -2,6 +2,7 @@ node_modules/
 client/node_modules/
 client/build/
 # database/*.db
+.claude
 database/pocketbuddy.db-shm
 database/pocketbuddy.db-wal
 .env
