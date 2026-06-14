@@ -348,18 +348,16 @@ async def create_expense(user_id: str, expense: ExpenseCreate):
         if firebase_service is None:
             raise HTTPException(status_code=503, detail="Firebase service not available")
 
-        expense_ref = firebase_service.db.reference(f'users/{user_id}/expenses')
-        new_expense = {
-            **expense.dict(),
-            'created_at': datetime.now().isoformat()
-        }
-        new_key = expense_ref.push().key
-        expense_ref.child(new_key).set(new_expense)
+        expense_id = firebase_service.add_expense(
+            user_id=user_id,
+            amount=expense.amount,
+            category=expense.category,
+            description=expense.description
+        )
 
         return {
-            'success': True,
-            'expense_id': new_key,
-            'data': new_expense
+            "success": True,
+            "expense_id": expense_id
         }
 
     except HTTPException:
@@ -394,8 +392,7 @@ async def get_budget_plan(user_id: str):
         if firebase_service is None:
             raise HTTPException(status_code=503, detail="Firebase service not available")
 
-        ref = firebase_service.db.reference(f'users/{user_id}/budget_plan')
-        plan = ref.get()
+        plan = firebase_service.get_budget_plan(user_id)
 
         if not plan:
             raise HTTPException(status_code=404, detail="Budget plan not found")
@@ -417,7 +414,7 @@ async def get_remaining_budget(user_id: str):
         if firebase_service is None or alert_system is None:
             raise HTTPException(status_code=503, detail="Service not available")
 
-        budget_plan = firebase_service.db.reference(f'users/{user_id}/budget_plan').get()
+        budget_plan = firebase_service.get_budget_plan(user_id)
         current_expenses = firebase_service.get_current_month_expenses(user_id)
 
         if not budget_plan:
@@ -445,7 +442,7 @@ async def get_user_alerts(user_id: str):
         if firebase_service is None or alert_system is None:
             raise HTTPException(status_code=503, detail="Service not available")
 
-        budget_plan = firebase_service.db.reference(f'users/{user_id}/budget_plan').get()
+        budget_plan = firebase_service.get_budget_plan(user_id)
         current_expenses = firebase_service.get_current_month_expenses(user_id)
 
         if not budget_plan:
@@ -659,7 +656,7 @@ async def get_dashboard(user_id: str):
             raise HTTPException(status_code=503, detail="One or more services not available")
 
         # Fetch all data
-        budget_plan = firebase_service.db.reference(f'users/{user_id}/budget_plan').get()
+        budget_plan = firebase_service.get_budget_plan(user_id)
         current_expenses = firebase_service.get_current_month_expenses(user_id)
         previous_expenses = firebase_service.get_previous_month_expenses(user_id)
 
