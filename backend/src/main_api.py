@@ -40,8 +40,8 @@ def setup_project_paths():
 
 # Setup paths before any other imports
 PROJECT_ROOT = setup_project_paths()
-print(f"✅ Project Root: {PROJECT_ROOT}")
-print(f"✅ Python Path: {sys.path[0]}")
+print(f"[OK] Project Root: {PROJECT_ROOT}")
+print(f"[OK] Python Path: {sys.path[0]}")
 
 # ==================== CORE IMPORTS ====================
 from fastapi import FastAPI, HTTPException, Query
@@ -74,7 +74,7 @@ try:
         RemainingBudgetResponse, DashboardResponse,
         HealthCheckResponse, ErrorResponse, ExpenseCreate
     )
-    print("✅ Expense Management imports successful")
+    print("[OK] Expense Management imports successful")
 
     firebase_service = FirebaseExpenseService()
     expense_initializer = ExpenseInitializer()
@@ -85,7 +85,7 @@ try:
     planner = BudgetPlanner(analyzer)
 
 except ImportError as e:
-    print(f"⚠ First import attempt failed: {e}")
+    print(f"[WARN] First import attempt failed: {e}")
 
     try:
         expense_mgmt_path = PROJECT_ROOT / 'backend' / 'src' / 'expense_management'
@@ -107,7 +107,7 @@ except ImportError as e:
             RemainingBudgetResponse, DashboardResponse,
             HealthCheckResponse, ErrorResponse, ExpenseCreate
         )
-        print("✅ Expense Management imports successful (direct path)")
+        print("[OK] Expense Management imports successful (direct path)")
 
         firebase_service = FirebaseExpenseService()
         expense_initializer = ExpenseInitializer()
@@ -118,7 +118,7 @@ except ImportError as e:
         planner = BudgetPlanner(analyzer)
 
     except ImportError as e2:
-        print(f"⚠ Expense Management services unavailable: {e2}")
+        print(f"[WARN] Expense Management services unavailable: {e2}")
 
         class MockService:
             def __init__(self, *args, **kwargs): pass
@@ -171,9 +171,9 @@ try:
     # pyrefly: ignore [missing-import]
     from personalised_support import chat_manager
     _llm_status = "operational" if chat_manager.ai_chatbot.llm else "limited (no LLM key)"
-    print(f"✅ Personalised Support imported — AI chatbot: {_llm_status}")
+    print(f"[OK] Personalised Support imported — AI chatbot: {_llm_status}")
 except ImportError as e:
-    print(f"⚠ Personalised Support not available: {e}")
+    print(f"[WARN] Personalised Support not available: {e}")
     support_router = None
     chat_manager = None
 
@@ -214,9 +214,9 @@ app.add_middleware(
 # Registered here so all 16 endpoints appear in /docs alongside the rest.
 if support_router:
     app.include_router(support_router)
-    print("✅ Support router attached — 16 endpoints at /api/support/*")
+    print("[OK] Support router attached — 16 endpoints at /api/support/*")
 else:
-    print("⚠ Support router not attached (import failed above)")
+    print("[WARN] Support router not attached (import failed above)")
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
 # ║                         SYSTEM HEALTH & STATUS                                  ║
@@ -315,6 +315,89 @@ async def initialize_user(request: InitializeUserRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/onboard")
+async def onboard_user(request: OnboardUserRequest):
+    """
+    First-time user onboarding endpoint.
+
+    Called right after registration when the user provides:
+    - Last month's total expense
+    - Last month's category-wise expense breakdown
+    - This month's intended budget
+
+    The system:
+    1. Persists last month's expenses to SQLite (so forecaster/trend analyzer work from day 1)
+    2. Computes a category-wise budget plan for this month based on the supplied pattern
+    3. Saves the budget plan to SQLite
+    4. Returns the full breakdown so the frontend can show it immediately
+
+    The chatbot will also automatically pick up this data on the next /api/support/chat call.
+
+    Example request body:
+    ```json
+    {
+      "user_id": "42",
+      "last_month_total": 12000,
+      "last_month_category_expenses": {
+        "food": 4000,
+        "transport": 1500,
+        "entertainment": 2000,
+        "education": 1500,
+        "health": 500,
+        "utilities": 1000,
+        "others": 1500
+      },
+      "this_month_budget": 11000,
+      "savings_target": 1000
+    }
+    ```
+    """
+    try:
+        if expense_initializer is None:
+            raise HTTPException(status_code=503, detail="ExpenseInitializer service not available")
+
+        result = expense_initializer.onboard_user_with_expense_data(
+            user_id=request.user_id,
+            last_month_total=request.last_month_total,
+            last_month_category_expenses=request.last_month_category_expenses,
+            this_month_budget=request.this_month_budget,
+            savings_target=request.savings_target or 0.0,
+        )
+
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error", "Onboarding failed"))
+
+        # Immediately push the financial context to the chatbot memory so the
+        # very first chat message is already personalised.
+        if chat_manager is not None:
+            try:
+                budget_plan = result.get("budget_plan", {})
+                summary = result.get("summary", {})
+                chat_manager.ai_chatbot.set_user_context(
+                    request.user_id,
+                    {
+                        "current_month_total": 0.0,
+                        "previous_month_total": request.last_month_total,
+                        "budget": request.this_month_budget,
+                        "budget_status": "within budget (0% used)",
+                        "category_spending": {},
+                        "biggest_category": summary.get("top_category"),
+                        "trend": "not enough history",
+                        "category_budget_breakdown": summary.get("category_budget_breakdown", {}),
+                    },
+                )
+            except Exception as ctx_err:
+                # Non-fatal — chatbot will reload context on next message
+                print(f"⚠ Could not pre-load chatbot context: {ctx_err}")
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/v1/reinitialize-budget")
 async def reinitialize_with_custom_budget(request: CustomBudgetRequest):
